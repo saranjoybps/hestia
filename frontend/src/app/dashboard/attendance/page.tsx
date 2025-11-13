@@ -1,0 +1,1211 @@
+'use client';
+
+import { useAuth } from '@/contexts/AuthContext';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Calendar } from '@/components/ui/calendar';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
+import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
+import { 
+  Clock, 
+  Calendar as CalendarIcon, 
+  CheckCircle2, 
+  XCircle, 
+  AlertCircle,
+  LogIn,
+  LogOut,
+  Download,
+  Filter,
+  Edit,
+  Users,
+  TrendingUp,
+  FileText,
+  ChevronLeft,
+  ChevronRight
+} from 'lucide-react';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, isSameDay } from 'date-fns';
+
+interface AttendanceRecord {
+  id: string;
+  userId: string;
+  userName: string;
+  date: string;
+  checkIn: string | null;
+  checkOut: string | null;
+  status: 'present' | 'absent' | 'half-day' | 'work-from-home' | 'on-leave' | 'week-off' | 'comp-off' | 'holiday';
+  workHours: number;
+  notes: string;
+  markedBy?: string;
+  correctedBy?: string;
+}
+
+interface TeamMember {
+  uid: string;
+  name: string;
+  email: string;
+  designation: string;
+  department: string;
+}
+
+interface AttendanceStats {
+  totalDays: number;
+  presentDays: number;
+  absentDays: number;
+  halfDays: number;
+  leaves: number;
+  attendancePercentage: number;
+  totalWorkHours: number;
+  avgWorkHours: number;
+}
+
+export default function AttendancePage() {
+  const { userData, user } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [selectedEmployee, setSelectedEmployee] = useState<string>('me');
+  const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null);
+  
+  // Dialogs
+  const [showCheckInDialog, setShowCheckInDialog] = useState(false);
+  const [showCheckOutDialog, setShowCheckOutDialog] = useState(false);
+  const [showMarkAttendanceDialog, setShowMarkAttendanceDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDayDetailsDialog, setShowDayDetailsDialog] = useState(false);
+  
+  // Form data
+  const [checkOutNotes, setCheckOutNotes] = useState('');
+  const [markAttendanceData, setMarkAttendanceData] = useState({
+    userId: '',
+    date: format(new Date(), 'yyyy-MM-dd'),
+    checkIn: '',
+    checkOut: '',
+    status: 'present' as AttendanceRecord['status'],
+    notes: '',
+  });
+  const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
+  const [selectedDayRecords, setSelectedDayRecords] = useState<AttendanceRecord[]>([]);
+  
+  // Filters
+  const [filterStartDate, setFilterStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [filterEndDate, setFilterEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
+
+  const isLead = userData?.role === 'lead';
+  const isManager = userData?.role === 'manager' || userData?.role === 'director';
+  const isHR = userData?.role === 'hr' || userData?.role === 'director';
+  const canMarkAttendance = isLead || isManager || isHR;
+  const canEditAttendance = isManager || isHR;
+
+  // Fetch team members (for leads/managers)
+  useEffect(() => {
+    if (canMarkAttendance && user) {
+      fetchTeamMembers();
+    }
+  }, [canMarkAttendance, user]);
+
+  // Fetch attendance records
+  useEffect(() => {
+    if (user) {
+      fetchAttendanceRecords();
+      if (selectedEmployee === 'me') {
+        fetchTodayAttendance();
+      }
+    }
+  }, [user, selectedEmployee, filterStartDate, filterEndDate]);
+
+  const fetchTeamMembers = async () => {
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch(`http://localhost:8000/api/users/${userData?.uid}/reportees`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setTeamMembers(data);
+      }
+    } catch (error) {
+      console.error('Error fetching team members:', error);
+    }
+  };
+
+  const fetchAttendanceRecords = async () => {
+    try {
+      const token = await user?.getIdToken();
+      const userId = selectedEmployee === 'me' ? userData?.uid : selectedEmployee;
+      
+      const response = await fetch(
+        `http://localhost:8000/api/attendance?user_id=${userId}&start_date=${filterStartDate}&end_date=${filterEndDate}`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setAttendanceRecords(data);
+      }
+    } catch (error) {
+      console.error('Error fetching attendance:', error);
+    }
+  };
+
+  const fetchTodayAttendance = async () => {
+    try {
+      const token = await user?.getIdToken();
+      const today = format(new Date(), 'yyyy-MM-dd');
+      
+      const response = await fetch(
+        `http://localhost:8000/api/attendance/${userData?.uid}/${today}`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setTodayAttendance(data);
+      } else {
+        setTodayAttendance(null);
+      }
+    } catch (error) {
+      console.error('Error fetching today attendance:', error);
+      setTodayAttendance(null);
+    }
+  };
+
+  const handleCheckIn = async () => {
+    setLoading(true);
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch('http://localhost:8000/api/attendance/check-in', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          userId: userData?.uid,
+          date: format(new Date(), 'yyyy-MM-dd'),
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to check in');
+      }
+
+      const data = await response.json();
+      setTodayAttendance(data);
+      setShowCheckInDialog(false);
+      toast.success('Checked in successfully!');
+      fetchAttendanceRecords();
+    } catch (error) {
+      console.error('Check-in error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to check in');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCheckOut = async () => {
+    setLoading(true);
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch('http://localhost:8000/api/attendance/check-out', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          userId: userData?.uid,
+          date: format(new Date(), 'yyyy-MM-dd'),
+          notes: checkOutNotes,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to check out');
+      }
+
+      const data = await response.json();
+      setTodayAttendance(data);
+      setShowCheckOutDialog(false);
+      setCheckOutNotes('');
+      toast.success('Checked out successfully!');
+      fetchAttendanceRecords();
+    } catch (error) {
+      console.error('Check-out error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to check out');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMarkAttendance = async () => {
+    setLoading(true);
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch('http://localhost:8000/api/attendance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          ...markAttendanceData,
+          markedBy: userData?.uid,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to mark attendance');
+      }
+
+      toast.success('Attendance marked successfully!');
+      setShowMarkAttendanceDialog(false);
+      resetMarkAttendanceForm();
+      fetchAttendanceRecords();
+    } catch (error) {
+      console.error('Mark attendance error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to mark attendance');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditAttendance = async () => {
+    if (!editingRecord) return;
+    
+    setLoading(true);
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch(`http://localhost:8000/api/attendance/${editingRecord.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          checkIn: editingRecord.checkIn,
+          checkOut: editingRecord.checkOut,
+          status: editingRecord.status,
+          notes: editingRecord.notes,
+          correctedBy: userData?.uid,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to update attendance');
+      }
+
+      toast.success('Attendance updated successfully!');
+      setShowEditDialog(false);
+      setEditingRecord(null);
+      fetchAttendanceRecords();
+    } catch (error) {
+      console.error('Edit attendance error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update attendance');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetMarkAttendanceForm = () => {
+    setMarkAttendanceData({
+      userId: '',
+      date: format(new Date(), 'yyyy-MM-dd'),
+      checkIn: '',
+      checkOut: '',
+      status: 'present',
+      notes: '',
+    });
+  };
+
+  const handleDayClick = (date: Date) => {
+    const dayRecords = attendanceRecords.filter(r => 
+      isSameDay(new Date(r.date), date)
+    );
+    setSelectedDayRecords(dayRecords);
+    setShowDayDetailsDialog(true);
+  };
+
+  const exportAttendanceReport = () => {
+    const csvContent = [
+      ['Date', 'Employee', 'Check In', 'Check Out', 'Work Hours', 'Status', 'Notes'],
+      ...attendanceRecords.map(r => [
+        r.date,
+        r.userName,
+        r.checkIn || '-',
+        r.checkOut || '-',
+        r.workHours?.toFixed(2) || '0',
+        r.status,
+        r.notes || '-'
+      ])
+    ].map(row => row.join(',')).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `attendance_report_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.click();
+    toast.success('Report downloaded successfully!');
+  };
+
+  const getStatusBadge = (status: string) => {
+    const styles: Record<string, string> = {
+      present: 'bg-green-100 text-green-800',
+      absent: 'bg-red-100 text-red-800',
+      'half-day': 'bg-yellow-100 text-yellow-800',
+      'work-from-home': 'bg-blue-100 text-blue-800',
+      'on-leave': 'bg-purple-100 text-purple-800',
+      'week-off': 'bg-gray-100 text-gray-800',
+      'comp-off': 'bg-indigo-100 text-indigo-800',
+      'holiday': 'bg-pink-100 text-pink-800',
+    };
+    return styles[status] || 'bg-gray-100 text-gray-800';
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'present':
+      case 'work-from-home':
+        return <CheckCircle2 className="h-4 w-4" />;
+      case 'absent':
+        return <XCircle className="h-4 w-4" />;
+      case 'half-day':
+        return <AlertCircle className="h-4 w-4" />;
+      default:
+        return <Clock className="h-4 w-4" />;
+    }
+  };
+
+  const getCalendarDayColor = (date: Date) => {
+    const record = attendanceRecords.find(r => isSameDay(new Date(r.date), date));
+    if (!record) return undefined;
+    
+    switch (record.status) {
+      case 'present':
+        return record.workHours >= 8 ? '#22c55e' : '#eab308'; // Green for 8+ hrs, Yellow for <8 hrs
+      case 'half-day':
+        return '#eab308'; // Yellow
+      case 'absent':
+        return '#ef4444'; // Red
+      case 'on-leave':
+      case 'holiday':
+      case 'week-off':
+      case 'comp-off':
+        return '#3b82f6'; // Blue
+      case 'work-from-home':
+        return '#8b5cf6'; // Purple
+      default:
+        return undefined;
+    }
+  };
+
+  const calculateStats = (): AttendanceStats => {
+    const totalDays = attendanceRecords.length;
+    const presentDays = attendanceRecords.filter(r => 
+      r.status === 'present' || r.status === 'work-from-home'
+    ).length;
+    const absentDays = attendanceRecords.filter(r => r.status === 'absent').length;
+    const halfDays = attendanceRecords.filter(r => r.status === 'half-day').length;
+    const leaves = attendanceRecords.filter(r => 
+      r.status === 'on-leave' || r.status === 'week-off' || r.status === 'comp-off'
+    ).length;
+    const totalWorkHours = attendanceRecords.reduce((sum, r) => sum + (r.workHours || 0), 0);
+    const workingDays = totalDays - leaves;
+    const attendancePercentage = workingDays > 0 
+      ? ((presentDays + (halfDays * 0.5)) / workingDays) * 100 
+      : 0;
+    const avgWorkHours = presentDays > 0 ? totalWorkHours / presentDays : 0;
+
+    return {
+      totalDays,
+      presentDays,
+      absentDays,
+      halfDays,
+      leaves,
+      attendancePercentage,
+      totalWorkHours,
+      avgWorkHours,
+    };
+  };
+
+  const stats = calculateStats();
+  const canCheckIn = !todayAttendance || !todayAttendance.checkIn;
+  const canCheckOut = todayAttendance && todayAttendance.checkIn && !todayAttendance.checkOut;
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Attendance Management</h1>
+          <p className="text-gray-600 mt-1">Track attendance, work hours, and generate reports</p>
+        </div>
+        <div className="flex gap-3">
+          {canMarkAttendance && (
+            <Button onClick={() => setShowMarkAttendanceDialog(true)}>
+              <Users className="h-4 w-4 mr-2" />
+              Mark Team Attendance
+            </Button>
+          )}
+          <Button variant="outline" onClick={exportAttendanceReport}>
+            <Download className="h-4 w-4 mr-2" />
+            Export Report
+          </Button>
+        </div>
+      </div>
+
+      {/* Employee Selector for Leads/Managers */}
+      {canMarkAttendance && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4">
+              <Label htmlFor="employee-select" className="text-sm font-medium">
+                View Attendance For:
+              </Label>
+              <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
+                <SelectTrigger id="employee-select" className="w-64">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="me">My Attendance</SelectItem>
+                  <Separator className="my-2" />
+                  {teamMembers.map(member => (
+                    <SelectItem key={member.uid} value={member.uid}>
+                      {member.name} - {member.designation}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Quick Actions - Only show for own attendance */}
+      {selectedEmployee === 'me' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Check In/Out Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Today's Attendance</CardTitle>
+              <CardDescription>{format(new Date(), 'EEEE, MMMM d, yyyy')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {todayAttendance ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <LogIn className="h-5 w-5 text-green-600" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Check In</p>
+                        <p className="text-lg font-bold text-green-600">
+                          {todayAttendance.checkIn || '-'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {todayAttendance.checkOut ? (
+                    <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <LogOut className="h-5 w-5 text-red-600" />
+                        <div>
+                          <p className="text-sm font-medium text-gray-700">Check Out</p>
+                          <p className="text-lg font-bold text-red-600">
+                            {todayAttendance.checkOut}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button 
+                      onClick={() => setShowCheckOutDialog(true)} 
+                      className="w-full"
+                      disabled={!canCheckOut}
+                    >
+                      <LogOut className="h-4 w-4 mr-2" />
+                      Check Out
+                    </Button>
+                  )}
+
+                  {todayAttendance.workHours > 0 && (
+                    <div className="pt-3 border-t">
+                      <p className="text-sm text-gray-600">Total Work Hours</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {todayAttendance.workHours.toFixed(2)} hrs
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600 mb-4">You haven't checked in today</p>
+                  <Button onClick={() => setShowCheckInDialog(true)} className="w-full">
+                    <LogIn className="h-4 w-4 mr-2" />
+                    Check In Now
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Monthly Stats */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Monthly Summary</CardTitle>
+              <CardDescription>{format(currentMonth, 'MMMM yyyy')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-3 bg-gradient-to-r from-green-50 to-green-100 rounded-lg">
+                  <div>
+                    <p className="text-sm text-gray-600">Attendance Rate</p>
+                    <p className="text-3xl font-bold text-green-600">
+                      {stats.attendancePercentage.toFixed(1)}%
+                    </p>
+                  </div>
+                  <TrendingUp className="h-8 w-8 text-green-600" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-green-50 rounded-lg">
+                    <p className="text-xs text-gray-600">Present</p>
+                    <p className="text-2xl font-bold text-green-600">{stats.presentDays}</p>
+                  </div>
+                  <div className="p-3 bg-red-50 rounded-lg">
+                    <p className="text-xs text-gray-600">Absent</p>
+                    <p className="text-2xl font-bold text-red-600">{stats.absentDays}</p>
+                  </div>
+                  <div className="p-3 bg-yellow-50 rounded-lg">
+                    <p className="text-xs text-gray-600">Half Day</p>
+                    <p className="text-2xl font-bold text-yellow-600">{stats.halfDays}</p>
+                  </div>
+                  <div className="p-3 bg-blue-50 rounded-lg">
+                    <p className="text-xs text-gray-600">Leaves</p>
+                    <p className="text-2xl font-bold text-blue-600">{stats.leaves}</p>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Total Work Hours</span>
+                    <span className="font-bold">{stats.totalWorkHours.toFixed(1)} hrs</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Avg Hours/Day</span>
+                    <span className="font-bold">{stats.avgWorkHours.toFixed(1)} hrs</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <Tabs defaultValue="list" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="list">Attendance List</TabsTrigger>
+          <TabsTrigger value="calendar">Calendar View</TabsTrigger>
+        </TabsList>
+
+        {/* List View */}
+        <TabsContent value="list" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Attendance Records</CardTitle>
+              <CardDescription>View your attendance history</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {attendanceRecords.length > 0 ? (
+                <div className="space-y-4">
+                  {/* Date Range Filter */}
+                  <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+                    <div className="flex-1">
+                      <Label htmlFor="start-date" className="text-sm">Start Date</Label>
+                      <Input
+                        id="start-date"
+                        type="date"
+                        value={filterStartDate}
+                        onChange={(e) => setFilterStartDate(e.target.value)}
+                        className="mt-1"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <Label htmlFor="end-date" className="text-sm">End Date</Label>
+                      <Input
+                        id="end-date"
+                        type="date"
+                        value={filterEndDate}
+                        onChange={(e) => setFilterEndDate(e.target.value)}
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        {canMarkAttendance && <TableHead>Employee</TableHead>}
+                        <TableHead>Check In</TableHead>
+                        <TableHead>Check Out</TableHead>
+                        <TableHead>Work Hours</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Notes</TableHead>
+                        {canEditAttendance && <TableHead>Actions</TableHead>}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {attendanceRecords.map((record) => (
+                        <TableRow key={record.id}>
+                          <TableCell className="font-medium">
+                            {format(new Date(record.date), 'MMM dd, yyyy')}
+                          </TableCell>
+                          {canMarkAttendance && <TableCell>{record.userName}</TableCell>}
+                          <TableCell>{record.checkIn || '-'}</TableCell>
+                          <TableCell>{record.checkOut || '-'}</TableCell>
+                          <TableCell>{record.workHours ? `${record.workHours.toFixed(2)} hrs` : '-'}</TableCell>
+                          <TableCell>
+                            <Badge className={getStatusBadge(record.status)}>
+                              <span className="flex items-center gap-1">
+                                {getStatusIcon(record.status)}
+                                {record.status.replace('-', ' ')}
+                              </span>
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-gray-600">
+                            {record.notes || '-'}
+                          </TableCell>
+                          {canEditAttendance && (
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setEditingRecord(record);
+                                  setShowEditDialog(true);
+                                }}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <CalendarIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">No attendance records found</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Calendar View */}
+        <TabsContent value="calendar" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Calendar View</CardTitle>
+              <CardDescription>Click on any day to view details</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                {/* Legend */}
+                <div className="flex flex-wrap gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded bg-green-500"></div>
+                    <span className="text-sm">Present (8+ hrs)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded bg-yellow-500"></div>
+                    <span className="text-sm">Half Day (&lt;8 hrs)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded bg-red-500"></div>
+                    <span className="text-sm">Absent</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded bg-blue-500"></div>
+                    <span className="text-sm">Leave/Holiday</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded bg-purple-500"></div>
+                    <span className="text-sm">Work From Home</span>
+                  </div>
+                </div>
+
+                {/* Custom Calendar Grid */}
+                <div className="border rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">
+                      {format(currentMonth, 'MMMM yyyy')}
+                    </h3>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentMonth(new Date())}
+                      >
+                        Today
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Calendar Grid */}
+                  <div className="grid grid-cols-7 gap-2">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                      <div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">
+                        {day}
+                      </div>
+                    ))}
+                    {eachDayOfInterval({
+                      start: startOfMonth(currentMonth),
+                      end: endOfMonth(currentMonth)
+                    }).map((date, idx) => {
+                      const color = getCalendarDayColor(date);
+                      const dayRecord = attendanceRecords.find(r => isSameDay(new Date(r.date), date));
+                      
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => handleDayClick(date)}
+                          className={`
+                            aspect-square p-2 rounded-lg border-2 transition-all
+                            ${isSameMonth(date, currentMonth) ? 'opacity-100' : 'opacity-30'}
+                            ${isToday(date) ? 'border-blue-500 font-bold' : 'border-transparent'}
+                            ${color ? 'cursor-pointer hover:scale-105' : ''}
+                          `}
+                          style={{
+                            backgroundColor: color || undefined,
+                            color: color ? 'white' : undefined,
+                          }}
+                        >
+                          <div className="text-sm">{format(date, 'd')}</div>
+                          {dayRecord && (
+                            <div className="text-xs mt-1">
+                              {dayRecord.workHours > 0 ? `${dayRecord.workHours.toFixed(1)}h` : ''}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Monthly Report Summary */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Monthly Report
+              </CardTitle>
+              <CardDescription>Summary for {format(currentMonth, 'MMMM yyyy')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600">Total Days</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.totalDays}</p>
+                </div>
+                <div className="p-4 bg-green-50 rounded-lg">
+                  <p className="text-sm text-gray-600">Attendance %</p>
+                  <p className="text-2xl font-bold text-green-600">{stats.attendancePercentage.toFixed(1)}%</p>
+                </div>
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <p className="text-sm text-gray-600">Total Hours</p>
+                  <p className="text-2xl font-bold text-blue-600">{stats.totalWorkHours.toFixed(0)}</p>
+                </div>
+                <div className="p-4 bg-orange-50 rounded-lg">
+                  <p className="text-sm text-gray-600">Avg Hours/Day</p>
+                  <p className="text-2xl font-bold text-orange-600">{stats.avgWorkHours.toFixed(1)}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Check In Dialog */}
+      <Dialog open={showCheckInDialog} onOpenChange={setShowCheckInDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Check In</DialogTitle>
+            <DialogDescription>
+              Mark your attendance for today at {format(new Date(), 'h:mm a')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-6 text-center">
+            <Clock className="h-16 w-16 text-blue-600 mx-auto mb-4" />
+            <p className="text-2xl font-bold text-gray-900">
+              {format(new Date(), 'h:mm a')}
+            </p>
+            <p className="text-gray-600 mt-2">
+              {format(new Date(), 'EEEE, MMMM d, yyyy')}
+            </p>
+          </div>
+          <div className="flex gap-3 justify-end">
+            <Button variant="outline" onClick={() => setShowCheckInDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCheckIn} disabled={loading}>
+              {loading ? 'Checking In...' : 'Confirm Check In'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Check Out Dialog */}
+      <Dialog open={showCheckOutDialog} onOpenChange={setShowCheckOutDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Check Out</DialogTitle>
+            <DialogDescription>
+              Complete your attendance for today at {format(new Date(), 'h:mm a')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="text-center">
+              <Clock className="h-16 w-16 text-red-600 mx-auto mb-4" />
+              <p className="text-2xl font-bold text-gray-900">
+                {format(new Date(), 'h:mm a')}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notes (Optional)</Label>
+              <Textarea
+                id="notes"
+                placeholder="Add any notes about your day..."
+                value={checkOutNotes}
+                onChange={(e) => setCheckOutNotes(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <div className="flex gap-3 justify-end">
+            <Button variant="outline" onClick={() => setShowCheckOutDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCheckOut} disabled={loading}>
+              {loading ? 'Checking Out...' : 'Confirm Check Out'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mark Attendance Dialog (for Leads/Managers) */}
+      <Dialog open={showMarkAttendanceDialog} onOpenChange={setShowMarkAttendanceDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Mark Team Attendance</DialogTitle>
+            <DialogDescription>
+              Record attendance for your team members
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="employee">Employee *</Label>
+                <Select
+                  value={markAttendanceData.userId}
+                  onValueChange={(value) => setMarkAttendanceData({ ...markAttendanceData, userId: value })}
+                >
+                  <SelectTrigger id="employee">
+                    <SelectValue placeholder="Select employee" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teamMembers.map(member => (
+                      <SelectItem key={member.uid} value={member.uid}>
+                        {member.name} - {member.designation}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="mark-date">Date *</Label>
+                <Input
+                  id="mark-date"
+                  type="date"
+                  value={markAttendanceData.date}
+                  onChange={(e) => setMarkAttendanceData({ ...markAttendanceData, date: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="check-in-time">Check In Time</Label>
+                <Input
+                  id="check-in-time"
+                  type="time"
+                  value={markAttendanceData.checkIn}
+                  onChange={(e) => setMarkAttendanceData({ ...markAttendanceData, checkIn: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="check-out-time">Check Out Time</Label>
+                <Input
+                  id="check-out-time"
+                  type="time"
+                  value={markAttendanceData.checkOut}
+                  onChange={(e) => setMarkAttendanceData({ ...markAttendanceData, checkOut: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2 col-span-2">
+                <Label htmlFor="status">Status *</Label>
+                <Select
+                  value={markAttendanceData.status}
+                  onValueChange={(value: any) => setMarkAttendanceData({ ...markAttendanceData, status: value })}
+                >
+                  <SelectTrigger id="status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="present">Present</SelectItem>
+                    <SelectItem value="absent">Absent</SelectItem>
+                    <SelectItem value="half-day">Half Day</SelectItem>
+                    <SelectItem value="work-from-home">Work From Home</SelectItem>
+                    <SelectItem value="on-leave">On Leave</SelectItem>
+                    <SelectItem value="week-off">Week Off</SelectItem>
+                    <SelectItem value="comp-off">Comp Off</SelectItem>
+                    <SelectItem value="holiday">Holiday</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2 col-span-2">
+                <Label htmlFor="mark-notes">Notes</Label>
+                <Textarea
+                  id="mark-notes"
+                  placeholder="Add any additional notes..."
+                  value={markAttendanceData.notes}
+                  onChange={(e) => setMarkAttendanceData({ ...markAttendanceData, notes: e.target.value })}
+                  rows={3}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowMarkAttendanceDialog(false);
+              resetMarkAttendanceForm();
+            }}>
+              Cancel
+            </Button>
+            <Button onClick={handleMarkAttendance} disabled={loading || !markAttendanceData.userId}>
+              {loading ? 'Saving...' : 'Mark Attendance'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Attendance Dialog (for Managers/HR) */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Attendance</DialogTitle>
+            <DialogDescription>
+              Correct attendance record - changes will be logged
+            </DialogDescription>
+          </DialogHeader>
+          {editingRecord && (
+            <div className="space-y-4 py-4">
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-600">Editing attendance for</p>
+                <p className="font-semibold">{editingRecord.userName}</p>
+                <p className="text-sm text-gray-600">{format(new Date(editingRecord.date), 'MMMM dd, yyyy')}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-check-in">Check In Time</Label>
+                  <Input
+                    id="edit-check-in"
+                    type="time"
+                    value={editingRecord.checkIn || ''}
+                    onChange={(e) => setEditingRecord({ ...editingRecord, checkIn: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-check-out">Check Out Time</Label>
+                  <Input
+                    id="edit-check-out"
+                    type="time"
+                    value={editingRecord.checkOut || ''}
+                    onChange={(e) => setEditingRecord({ ...editingRecord, checkOut: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2 col-span-2">
+                  <Label htmlFor="edit-status">Status</Label>
+                  <Select
+                    value={editingRecord.status}
+                    onValueChange={(value: any) => setEditingRecord({ ...editingRecord, status: value })}
+                  >
+                    <SelectTrigger id="edit-status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="present">Present</SelectItem>
+                      <SelectItem value="absent">Absent</SelectItem>
+                      <SelectItem value="half-day">Half Day</SelectItem>
+                      <SelectItem value="work-from-home">Work From Home</SelectItem>
+                      <SelectItem value="on-leave">On Leave</SelectItem>
+                      <SelectItem value="week-off">Week Off</SelectItem>
+                      <SelectItem value="comp-off">Comp Off</SelectItem>
+                      <SelectItem value="holiday">Holiday</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2 col-span-2">
+                  <Label htmlFor="edit-notes">Notes</Label>
+                  <Textarea
+                    id="edit-notes"
+                    placeholder="Add correction notes..."
+                    value={editingRecord.notes}
+                    onChange={(e) => setEditingRecord({ ...editingRecord, notes: e.target.value })}
+                    rows={3}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowEditDialog(false);
+              setEditingRecord(null);
+            }}>
+              Cancel
+            </Button>
+            <Button onClick={handleEditAttendance} disabled={loading}>
+              {loading ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Day Details Dialog */}
+      <Dialog open={showDayDetailsDialog} onOpenChange={setShowDayDetailsDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Day Details</DialogTitle>
+            <DialogDescription>
+              Attendance records for selected day
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {selectedDayRecords.length > 0 ? (
+              selectedDayRecords.map(record => (
+                <div key={record.id} className="p-4 border rounded-lg space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold">{record.userName}</p>
+                    <Badge className={getStatusBadge(record.status)}>
+                      {record.status}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-gray-600">Check In:</span>
+                      <span className="ml-2 font-medium">{record.checkIn || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Check Out:</span>
+                      <span className="ml-2 font-medium">{record.checkOut || '-'}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-gray-600">Work Hours:</span>
+                      <span className="ml-2 font-medium">{record.workHours?.toFixed(2) || '0'} hrs</span>
+                    </div>
+                    {record.notes && (
+                      <div className="col-span-2">
+                        <span className="text-gray-600">Notes:</span>
+                        <p className="mt-1 text-gray-800">{record.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8 text-gray-600">
+                No attendance records for this day
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowDayDetailsDialog(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
