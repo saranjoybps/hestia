@@ -136,7 +136,7 @@ export default function OrganizationPage() {
       
       // Fetch users and departments in parallel
       const [usersRes, deptsRes] = await Promise.all([
-        fetch('http://localhost:8000/api/users/', {
+        fetch('http://localhost:8000/api/users/?page=1&limit=100', {
           headers: { 'Authorization': `Bearer ${token}` },
         }),
         fetch('http://localhost:8000/api/departments/', {
@@ -201,30 +201,62 @@ export default function OrganizationPage() {
   };
 
   const handleUpdateUser = async () => {
-    if (!selectedUser) return;
+    console.log('🔵 handleUpdateUser called');
+    console.log('selectedUser:', selectedUser);
+    console.log('userForm:', userForm);
+    
+    if (!selectedUser) {
+      console.log('❌ No selected user, returning');
+      return;
+    }
     
     setLoading(true);
     try {
       const token = await user?.getIdToken();
+      
+      // Prepare update data
+      const updateData: any = {
+        role: userForm.role,
+        department: userForm.department,
+        designation: userForm.designation,
+      };
+      
+      // Only include manager_id if it has a value or explicitly set to null
+      if (userForm.manager_id && userForm.manager_id !== 'none') {
+        updateData.manager_id = userForm.manager_id;
+      } else {
+        updateData.manager_id = null;
+      }
+      
+      // Only include lead_id if it has a value or explicitly set to null
+      if (userForm.lead_id && userForm.lead_id !== 'none') {
+        updateData.lead_id = userForm.lead_id;
+      } else {
+        updateData.lead_id = null;
+      }
+      
+      console.log('Updating user with data:', updateData);
+      
       const response = await fetch(`http://localhost:8000/api/users/${selectedUser.uid}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          role: userForm.role,
-          department: userForm.department,
-          designation: userForm.designation,
-          manager_id: userForm.manager_id || null,
-          lead_id: userForm.lead_id || null,
-        }),
+        body: JSON.stringify(updateData),
       });
+
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
 
       if (!response.ok) {
         const error = await response.json();
+        console.error('Error response:', error);
         throw new Error(error.detail || 'Failed to update user');
       }
+
+      const result = await response.json();
+      console.log('Update result:', result);
 
       toast.success('User updated successfully!');
       setShowUserDialog(false);
@@ -750,14 +782,14 @@ export default function OrganizationPage() {
                 <div className="space-y-2">
                   <Label htmlFor="manager">Reports to Manager</Label>
                   <Select 
-                    value={userForm.manager_id} 
-                    onValueChange={(value) => setUserForm({ ...userForm, manager_id: value })}
+                    value={userForm.manager_id || 'none'}
+                    onValueChange={(value) => setUserForm({ ...userForm, manager_id: value === 'none' ? '' : value })}
                   >
                     <SelectTrigger id="manager">
                       <SelectValue placeholder="Select manager (optional)" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                       {users
                         .filter(u => 
                           (u.role === 'manager' || u.role === 'director') && 
@@ -776,14 +808,14 @@ export default function OrganizationPage() {
                   <div className="space-y-2">
                     <Label htmlFor="lead">Reports to Lead</Label>
                     <Select 
-                      value={userForm.lead_id} 
-                      onValueChange={(value) => setUserForm({ ...userForm, lead_id: value })}
+                      value={userForm.lead_id || 'none'}
+                      onValueChange={(value) => setUserForm({ ...userForm, lead_id: value === 'none' ? '' : value })}
                     >
                       <SelectTrigger id="lead">
                         <SelectValue placeholder="Select lead (optional)" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {users
                           .filter(u => u.role === 'lead' && u.uid !== selectedUser.uid)
                           .map((u) => (
@@ -935,16 +967,16 @@ export default function OrganizationPage() {
             <div className="space-y-2">
               <Label htmlFor="dept-head">Department Head</Label>
               <Select 
-                value={deptForm.head_id} 
-                onValueChange={(value) => setDeptForm({ ...deptForm, head_id: value })}
+                value={deptForm.head_id || 'none'}
+                onValueChange={(value) => setDeptForm({ ...deptForm, head_id: value === 'none' ? '' : value })}
               >
                 <SelectTrigger id="dept-head">
                   <SelectValue placeholder="Select department head (optional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {users
-                    .filter(u => ['manager', 'director', 'hr'].includes(u.role))
+                    .filter(u => ['manager', 'director', 'hr', 'lead'].includes(u.role))
                     .map((u) => (
                       <SelectItem key={u.uid} value={u.uid}>
                         {u.name} ({u.role})

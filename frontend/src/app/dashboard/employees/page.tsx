@@ -103,17 +103,27 @@ interface ReporteeStats {
   status: string;
 }
 
+interface Department {
+  id: string;
+  name: string;
+  description?: string;
+  head_id?: string;
+  created_at: string;
+}
+
 export default function EmployeesPage() {
   const { userData, user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [reportees, setReportees] = useState<ReporteeStats[]>([]);
   const [managers, setManagers] = useState<Employee[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const itemsPerPage = 10;
+  const [totalEmployees, setTotalEmployees] = useState(0);
+  const itemsPerPage = 20;
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -154,6 +164,7 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     if (user) {
+      fetchDepartments();
       fetchEmployees();
       if (canViewReportees) {
         fetchReportees();
@@ -163,6 +174,22 @@ export default function EmployeesPage() {
       }
     }
   }, [user, currentPage, searchQuery, departmentFilter, statusFilter, roleFilter]);
+
+  const fetchDepartments = async () => {
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch('http://localhost:8000/api/departments/', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setDepartments(data.departments || []);
+      }
+    } catch (error) {
+      console.error('Error fetching departments:', error);
+    }
+  };
 
   const fetchEmployees = async () => {
     try {
@@ -183,8 +210,12 @@ export default function EmployeesPage() {
       if (response.ok) {
         const data = await response.json();
         setEmployees(data.users || data);
-        if (data.total) {
+        if (data.total !== undefined) {
+          setTotalEmployees(data.total);
           setTotalPages(Math.ceil(data.total / itemsPerPage));
+        } else {
+          // Fallback if backend doesn't return total
+          setTotalEmployees(data.users?.length || data.length || 0);
         }
       }
     } catch (error) {
@@ -235,13 +266,28 @@ export default function EmployeesPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
+      
+      // Convert camelCase to snake_case for backend
+      const requestData = {
+        email: formData.email,
+        name: formData.name,
+        password: formData.password,
+        role: formData.role,
+        department: formData.department,
+        designation: formData.designation,
+        phone: formData.phone,
+        manager_id: formData.managerId || null,
+        lead_id: null,
+        status: 'active'
+      };
+      
       const response = await fetch('http://localhost:8000/api/users/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(requestData),
       });
 
       if (!response.ok) {
@@ -274,7 +320,7 @@ export default function EmployeesPage() {
             department: formData.department,
             designation: formData.designation,
             phone: formData.phone,
-            managerId: formData.managerId,
+            manager_id: formData.managerId || null,
           }
         : {
             name: formData.name,
@@ -384,8 +430,6 @@ export default function EmployeesPage() {
       : 'bg-red-100 text-red-800';
   };
 
-  const departments = ['Engineering', 'Product', 'Design', 'Marketing', 'Sales', 'HR', 'Finance'];
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -449,7 +493,7 @@ export default function EmployeesPage() {
                   <SelectContent>
                     <SelectItem value="all">All Departments</SelectItem>
                     {departments.map(dept => (
-                      <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                      <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -542,11 +586,22 @@ export default function EmployeesPage() {
 
                   {/* Pagination */}
                   {totalPages > 1 && (
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-gray-600">
-                        Page {currentPage} of {totalPages}
-                      </p>
+                    <div className="flex items-center justify-between border-t pt-4">
+                      <div className="text-sm text-gray-600">
+                        <p>Page {currentPage} of {totalPages}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalEmployees)} of {totalEmployees} employees
+                        </p>
+                      </div>
                       <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage(1)}
+                          disabled={currentPage === 1}
+                        >
+                          First
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -556,6 +611,34 @@ export default function EmployeesPage() {
                           <ChevronLeft className="h-4 w-4" />
                           Previous
                         </Button>
+                        
+                        {/* Page Numbers */}
+                        <div className="flex gap-1">
+                          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            let pageNum;
+                            if (totalPages <= 5) {
+                              pageNum = i + 1;
+                            } else if (currentPage <= 3) {
+                              pageNum = i + 1;
+                            } else if (currentPage >= totalPages - 2) {
+                              pageNum = totalPages - 4 + i;
+                            } else {
+                              pageNum = currentPage - 2 + i;
+                            }
+                            return (
+                              <Button
+                                key={pageNum}
+                                variant={currentPage === pageNum ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setCurrentPage(pageNum)}
+                                className="w-10"
+                              >
+                                {pageNum}
+                              </Button>
+                            );
+                          })}
+                        </div>
+
                         <Button
                           variant="outline"
                           size="sm"
@@ -564,6 +647,14 @@ export default function EmployeesPage() {
                         >
                           Next
                           <ChevronRight className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPage(totalPages)}
+                          disabled={currentPage === totalPages}
+                        >
+                          Last
                         </Button>
                       </div>
                     </div>
@@ -755,7 +846,7 @@ export default function EmployeesPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {departments.map(dept => (
-                      <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                      <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -879,7 +970,7 @@ export default function EmployeesPage() {
                         </SelectTrigger>
                         <SelectContent>
                           {departments.map(dept => (
-                            <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                            <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>

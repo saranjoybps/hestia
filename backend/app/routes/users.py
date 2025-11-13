@@ -18,6 +18,13 @@ async def register_user(
     Creates user in Firebase Auth and Firestore
     """
     try:
+        # Only super admin (created_by: system) can create directors
+        if user_data.role == "director" and current_user.get("created_by") != "system":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only super administrator can create director accounts"
+            )
+        
         # Create user in Firebase Auth
         firebase_user = firebase_auth.create_user(
             email=user_data.email,
@@ -36,7 +43,7 @@ async def register_user(
             "manager_id": user_data.manager_id,
             "lead_id": user_data.lead_id,
             "status": user_data.status,
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.utcnow().isoformat(),
             "updated_at": None,
             "created_by": current_user.get("uid")
         }
@@ -61,7 +68,7 @@ async def register_user(
         )
 
 
-@router.get("/", response_model=list[UserResponse])
+@router.get("/")
 async def list_users(
     department: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
@@ -95,14 +102,28 @@ async def list_users(
             if search:
                 if search.lower() in user_data.get("name", "").lower() or \
                    search.lower() in user_data.get("email", "").lower():
-                    user_list.append(UserResponse(**user_data))
+                    user_list.append(user_data)
             else:
-                user_list.append(UserResponse(**user_data))
+                user_list.append(user_data)
+        
+        # Get total count
+        total = len(user_list)
         
         # Apply pagination
         start = (page - 1) * limit
         end = start + limit
-        return user_list[start:end]
+        paginated_users = user_list[start:end]
+        
+        # Convert to response models
+        user_responses = [UserResponse(**user) for user in paginated_users]
+        
+        return {
+            "users": user_responses,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "totalPages": (total + limit - 1) // limit
+        }
         
     except Exception as e:
         raise HTTPException(
@@ -158,9 +179,16 @@ async def update_user(
     Users can only update their own personal fields
     """
     try:
+        print(f"=== UPDATE USER REQUEST ===")
+        print(f"User ID: {user_id}")
+        print(f"Current user role: {current_user.get('role')}")
+        print(f"Update data: {user_update.model_dump()}")
+        
         # Check permissions
         is_admin = current_user.get("role") in ["hr", "director"]
         is_self = current_user.get("uid") == user_id
+        
+        print(f"Is admin: {is_admin}, Is self: {is_self}")
         
         if not is_admin and not is_self:
             raise HTTPException(
@@ -181,30 +209,47 @@ async def update_user(
         # Prepare update data
         update_data = user_update.model_dump(exclude_unset=True)
         
+        print(f"Update data (exclude_unset): {update_data}")
+        
+        # Only super admin can change role to director
+        if "role" in update_data and update_data["role"] == "director":
+            if current_user.get("created_by") != "system":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only super administrator can assign director role"
+                )
+        
         # If not admin, restrict fields
         if not is_admin:
             allowed_fields = ["name", "phone"]
             update_data = {k: v for k, v in update_data.items() if k in allowed_fields}
         
-        update_data["updated_at"] = datetime.utcnow()
+        update_data["updated_at"] = datetime.utcnow().isoformat()
+        
+        print(f"Final update data: {update_data}")
         
         # Update Firestore
         user_ref.update(update_data)
+        
+        print(f"✅ User updated successfully in Firestore")
         
         # Create audit log
         audit_log = {
             "user_id": user_id,
             "updated_by": current_user.get("uid"),
             "updated_fields": list(update_data.keys()),
-            "timestamp": datetime.utcnow()
+            "timestamp": datetime.utcnow().isoformat()
         }
         db.collection("audit_logs").add(audit_log)
         
-        # Get updated user
-        updated_doc = user_ref.get()
-        user_data = updated_doc.to_dict()
-        user_data["uid"] = user_id
-        return UserResponse(**user_data)
+        # Return updated user data by merging original with updates
+        original_data = user_doc.to_dict()
+        original_data.update(update_data)
+        original_data["uid"] = user_id
+        
+        print(f"📤 Returning updated user: {original_data}")
+        
+        return UserResponse(**original_data)
         
     except HTTPException:
         raise
@@ -237,7 +282,7 @@ async def deactivate_user(
         # Update status to inactive
         user_ref.update({
             "status": "inactive",
-            "updated_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow().isoformat(),
             "deactivated_by": current_user.get("uid")
         })
         

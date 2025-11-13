@@ -26,6 +26,7 @@ class UserUpdate(BaseModel):
     """User update model"""
     name: Optional[str] = None
     phone: Optional[str] = None
+    role: Optional[Literal["employee", "lead", "manager", "hr", "director"]] = None
     department: Optional[str] = None
     designation: Optional[str] = None
     manager_id: Optional[str] = None
