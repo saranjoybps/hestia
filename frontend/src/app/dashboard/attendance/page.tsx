@@ -41,8 +41,6 @@ import {
   CheckCircle2, 
   XCircle, 
   AlertCircle,
-  LogIn,
-  LogOut,
   Download,
   Filter,
   Edit,
@@ -61,7 +59,7 @@ interface AttendanceRecord {
   date: string;
   checkIn: string | null;
   checkOut: string | null;
-  status: 'present' | 'absent' | 'half-day' | 'work-from-home' | 'on-leave' | 'week-off' | 'comp-off' | 'holiday';
+  status: 'present' | 'absent' | 'half-day' | 'on-leave' | 'week-off' | 'comp-off' | 'holiday';
   workHours: number;
   notes: string;
   markedBy?: string;
@@ -95,17 +93,13 @@ export default function AttendancePage() {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<string>('me');
-  const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null);
   
   // Dialogs
-  const [showCheckInDialog, setShowCheckInDialog] = useState(false);
-  const [showCheckOutDialog, setShowCheckOutDialog] = useState(false);
   const [showMarkAttendanceDialog, setShowMarkAttendanceDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDayDetailsDialog, setShowDayDetailsDialog] = useState(false);
   
   // Form data
-  const [checkOutNotes, setCheckOutNotes] = useState('');
   const [markAttendanceData, setMarkAttendanceData] = useState({
     userId: '',
     date: format(new Date(), 'yyyy-MM-dd'),
@@ -114,6 +108,7 @@ export default function AttendancePage() {
     status: 'present' as AttendanceRecord['status'],
     notes: '',
   });
+  const [teamAttendanceMap, setTeamAttendanceMap] = useState<Record<string, AttendanceRecord['status']>>({});
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
   const [selectedDayRecords, setSelectedDayRecords] = useState<AttendanceRecord[]>([]);
   
@@ -138,9 +133,6 @@ export default function AttendancePage() {
   useEffect(() => {
     if (user) {
       fetchAttendanceRecords();
-      if (selectedEmployee === 'me') {
-        fetchTodayAttendance();
-      }
     }
   }, [user, selectedEmployee, filterStartDate, filterEndDate]);
 
@@ -181,124 +173,44 @@ export default function AttendancePage() {
     }
   };
 
-  const fetchTodayAttendance = async () => {
-    try {
-      const token = await user?.getIdToken();
-      const today = format(new Date(), 'yyyy-MM-dd');
-      
-      const response = await fetch(
-        `http://localhost:8000/api/attendance/${userData?.uid}/${today}`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setTodayAttendance(data);
-      } else {
-        setTodayAttendance(null);
-      }
-    } catch (error) {
-      console.error('Error fetching today attendance:', error);
-      setTodayAttendance(null);
-    }
-  };
-
-  const handleCheckIn = async () => {
-    setLoading(true);
-    try {
-      const token = await user?.getIdToken();
-      const response = await fetch('http://localhost:8000/api/attendance/check-in', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          userId: userData?.uid,
-          date: format(new Date(), 'yyyy-MM-dd'),
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to check in');
-      }
-
-      const data = await response.json();
-      setTodayAttendance(data);
-      setShowCheckInDialog(false);
-      toast.success('Checked in successfully!');
-      fetchAttendanceRecords();
-    } catch (error) {
-      console.error('Check-in error:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to check in');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCheckOut = async () => {
-    setLoading(true);
-    try {
-      const token = await user?.getIdToken();
-      const response = await fetch('http://localhost:8000/api/attendance/check-out', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          userId: userData?.uid,
-          date: format(new Date(), 'yyyy-MM-dd'),
-          notes: checkOutNotes,
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to check out');
-      }
-
-      const data = await response.json();
-      setTodayAttendance(data);
-      setShowCheckOutDialog(false);
-      setCheckOutNotes('');
-      toast.success('Checked out successfully!');
-      fetchAttendanceRecords();
-    } catch (error) {
-      console.error('Check-out error:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to check out');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleMarkAttendance = async () => {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      const response = await fetch('http://localhost:8000/api/attendance', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          ...markAttendanceData,
-          markedBy: userData?.uid,
-        }),
+      
+      // Mark attendance for all team members
+      const promises = Object.entries(teamAttendanceMap).map(async ([userId, status]) => {
+        const response = await fetch('http://localhost:8000/api/attendance', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            userId: userId,
+            date: markAttendanceData.date,
+            status: status,
+            markedBy: userData?.uid,
+            checkIn: status === 'present' || status === 'half-day' ? '09:00' : '',
+            checkOut: status === 'present' || status === 'half-day' ? '18:00' : '',
+            notes: '',
+          }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.detail || `Failed to mark attendance for ${userId}`);
+        }
+        
+        return response.json();
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to mark attendance');
-      }
+      await Promise.all(promises);
 
-      toast.success('Attendance marked successfully!');
+      toast.success(`Attendance marked successfully for ${Object.keys(teamAttendanceMap).length} team member(s)!`);
       setShowMarkAttendanceDialog(false);
       resetMarkAttendanceForm();
+      setTeamAttendanceMap({});
       fetchAttendanceRecords();
     } catch (error) {
       console.error('Mark attendance error:', error);
@@ -393,7 +305,6 @@ export default function AttendancePage() {
       present: 'bg-green-100 text-green-800',
       absent: 'bg-red-100 text-red-800',
       'half-day': 'bg-yellow-100 text-yellow-800',
-      'work-from-home': 'bg-blue-100 text-blue-800',
       'on-leave': 'bg-purple-100 text-purple-800',
       'week-off': 'bg-gray-100 text-gray-800',
       'comp-off': 'bg-indigo-100 text-indigo-800',
@@ -405,7 +316,6 @@ export default function AttendancePage() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'present':
-      case 'work-from-home':
         return <CheckCircle2 className="h-4 w-4" />;
       case 'absent':
         return <XCircle className="h-4 w-4" />;
@@ -432,8 +342,6 @@ export default function AttendancePage() {
       case 'week-off':
       case 'comp-off':
         return '#3b82f6'; // Blue
-      case 'work-from-home':
-        return '#8b5cf6'; // Purple
       default:
         return undefined;
     }
@@ -442,7 +350,7 @@ export default function AttendancePage() {
   const calculateStats = (): AttendanceStats => {
     const totalDays = attendanceRecords.length;
     const presentDays = attendanceRecords.filter(r => 
-      r.status === 'present' || r.status === 'work-from-home'
+      r.status === 'present'
     ).length;
     const absentDays = attendanceRecords.filter(r => r.status === 'absent').length;
     const halfDays = attendanceRecords.filter(r => r.status === 'half-day').length;
@@ -469,8 +377,6 @@ export default function AttendancePage() {
   };
 
   const stats = calculateStats();
-  const canCheckIn = !todayAttendance || !todayAttendance.checkIn;
-  const canCheckOut = todayAttendance && todayAttendance.checkIn && !todayAttendance.checkOut;
 
   return (
     <div className="space-y-6">
@@ -482,7 +388,15 @@ export default function AttendancePage() {
         </div>
         <div className="flex gap-3">
           {canMarkAttendance && (
-            <Button onClick={() => setShowMarkAttendanceDialog(true)}>
+            <Button onClick={() => {
+              // Initialize attendance map with 'present' for all team members
+              const initialMap: Record<string, AttendanceRecord['status']> = {};
+              teamMembers.forEach(member => {
+                initialMap[member.uid] = 'present';
+              });
+              setTeamAttendanceMap(initialMap);
+              setShowMarkAttendanceDialog(true);
+            }}>
               <Users className="h-4 w-4 mr-2" />
               Mark Team Attendance
             </Button>
@@ -521,82 +435,14 @@ export default function AttendancePage() {
         </Card>
       )}
 
-      {/* Quick Actions - Only show for own attendance */}
+      {/* Monthly Stats - Only show for own attendance */}
       {selectedEmployee === 'me' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Check In/Out Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Today's Attendance</CardTitle>
-              <CardDescription>{format(new Date(), 'EEEE, MMMM d, yyyy')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {todayAttendance ? (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <LogIn className="h-5 w-5 text-green-600" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-700">Check In</p>
-                        <p className="text-lg font-bold text-green-600">
-                          {todayAttendance.checkIn || '-'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {todayAttendance.checkOut ? (
-                    <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <LogOut className="h-5 w-5 text-red-600" />
-                        <div>
-                          <p className="text-sm font-medium text-gray-700">Check Out</p>
-                          <p className="text-lg font-bold text-red-600">
-                            {todayAttendance.checkOut}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <Button 
-                      onClick={() => setShowCheckOutDialog(true)} 
-                      className="w-full"
-                      disabled={!canCheckOut}
-                    >
-                      <LogOut className="h-4 w-4 mr-2" />
-                      Check Out
-                    </Button>
-                  )}
-
-                  {todayAttendance.workHours > 0 && (
-                    <div className="pt-3 border-t">
-                      <p className="text-sm text-gray-600">Total Work Hours</p>
-                      <p className="text-2xl font-bold text-gray-900">
-                        {todayAttendance.workHours.toFixed(2)} hrs
-                      </p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-6">
-                  <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600 mb-4">You haven't checked in today</p>
-                  <Button onClick={() => setShowCheckInDialog(true)} className="w-full">
-                    <LogIn className="h-4 w-4 mr-2" />
-                    Check In Now
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Monthly Stats */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Monthly Summary</CardTitle>
-              <CardDescription>{format(currentMonth, 'MMMM yyyy')}</CardDescription>
-            </CardHeader>
-            <CardContent>
+        <Card>
+          <CardHeader>
+            <CardTitle>Monthly Summary</CardTitle>
+            <CardDescription>{format(currentMonth, 'MMMM yyyy')}</CardDescription>
+          </CardHeader>
+          <CardContent>
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-3 bg-gradient-to-r from-green-50 to-green-100 rounded-lg">
                   <div>
@@ -642,7 +488,6 @@ export default function AttendancePage() {
               </div>
             </CardContent>
           </Card>
-        </div>
       )}
 
       {/* Tabs */}
@@ -776,10 +621,6 @@ export default function AttendancePage() {
                     <div className="w-4 h-4 rounded bg-blue-500"></div>
                     <span className="text-sm">Leave/Holiday</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded bg-purple-500"></div>
-                    <span className="text-sm">Work From Home</span>
-                  </div>
                 </div>
 
                 {/* Custom Calendar Grid */}
@@ -890,166 +731,71 @@ export default function AttendancePage() {
         </TabsContent>
       </Tabs>
 
-      {/* Check In Dialog */}
-      <Dialog open={showCheckInDialog} onOpenChange={setShowCheckInDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Check In</DialogTitle>
-            <DialogDescription>
-              Mark your attendance for today at {format(new Date(), 'h:mm a')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-6 text-center">
-            <Clock className="h-16 w-16 text-blue-600 mx-auto mb-4" />
-            <p className="text-2xl font-bold text-gray-900">
-              {format(new Date(), 'h:mm a')}
-            </p>
-            <p className="text-gray-600 mt-2">
-              {format(new Date(), 'EEEE, MMMM d, yyyy')}
-            </p>
-          </div>
-          <div className="flex gap-3 justify-end">
-            <Button variant="outline" onClick={() => setShowCheckInDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCheckIn} disabled={loading}>
-              {loading ? 'Checking In...' : 'Confirm Check In'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Check Out Dialog */}
-      <Dialog open={showCheckOutDialog} onOpenChange={setShowCheckOutDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Check Out</DialogTitle>
-            <DialogDescription>
-              Complete your attendance for today at {format(new Date(), 'h:mm a')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="text-center">
-              <Clock className="h-16 w-16 text-red-600 mx-auto mb-4" />
-              <p className="text-2xl font-bold text-gray-900">
-                {format(new Date(), 'h:mm a')}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notes (Optional)</Label>
-              <Textarea
-                id="notes"
-                placeholder="Add any notes about your day..."
-                value={checkOutNotes}
-                onChange={(e) => setCheckOutNotes(e.target.value)}
-                rows={3}
-              />
-            </div>
-          </div>
-          <div className="flex gap-3 justify-end">
-            <Button variant="outline" onClick={() => setShowCheckOutDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleCheckOut} disabled={loading}>
-              {loading ? 'Checking Out...' : 'Confirm Check Out'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* Mark Attendance Dialog (for Leads/Managers) */}
       <Dialog open={showMarkAttendanceDialog} onOpenChange={setShowMarkAttendanceDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Mark Team Attendance</DialogTitle>
             <DialogDescription>
-              Record attendance for your team members
+              Select attendance status for each team member
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="employee">Employee *</Label>
-                <Select
-                  value={markAttendanceData.userId}
-                  onValueChange={(value) => setMarkAttendanceData({ ...markAttendanceData, userId: value })}
-                >
-                  <SelectTrigger id="employee">
-                    <SelectValue placeholder="Select employee" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {teamMembers.map(member => (
-                      <SelectItem key={member.uid} value={member.uid}>
-                        {member.name} - {member.designation}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="mark-date">Date *</Label>
-                <Input
-                  id="mark-date"
-                  type="date"
-                  value={markAttendanceData.date}
-                  onChange={(e) => setMarkAttendanceData({ ...markAttendanceData, date: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="check-in-time">Check In Time</Label>
-                <Input
-                  id="check-in-time"
-                  type="time"
-                  value={markAttendanceData.checkIn}
-                  onChange={(e) => setMarkAttendanceData({ ...markAttendanceData, checkIn: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="check-out-time">Check Out Time</Label>
-                <Input
-                  id="check-out-time"
-                  type="time"
-                  value={markAttendanceData.checkOut}
-                  onChange={(e) => setMarkAttendanceData({ ...markAttendanceData, checkOut: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2 col-span-2">
-                <Label htmlFor="status">Status *</Label>
-                <Select
-                  value={markAttendanceData.status}
-                  onValueChange={(value: any) => setMarkAttendanceData({ ...markAttendanceData, status: value })}
-                >
-                  <SelectTrigger id="status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="present">Present</SelectItem>
-                    <SelectItem value="absent">Absent</SelectItem>
-                    <SelectItem value="half-day">Half Day</SelectItem>
-                    <SelectItem value="work-from-home">Work From Home</SelectItem>
-                    <SelectItem value="on-leave">On Leave</SelectItem>
-                    <SelectItem value="week-off">Week Off</SelectItem>
-                    <SelectItem value="comp-off">Comp Off</SelectItem>
-                    <SelectItem value="holiday">Holiday</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2 col-span-2">
-                <Label htmlFor="mark-notes">Notes</Label>
-                <Textarea
-                  id="mark-notes"
-                  placeholder="Add any additional notes..."
-                  value={markAttendanceData.notes}
-                  onChange={(e) => setMarkAttendanceData({ ...markAttendanceData, notes: e.target.value })}
-                  rows={3}
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="attendance-date">Date *</Label>
+              <Input
+                id="attendance-date"
+                type="date"
+                value={markAttendanceData.date}
+                onChange={(e) => setMarkAttendanceData({ ...markAttendanceData, date: e.target.value })}
+                className="max-w-xs"
+              />
             </div>
+
+            <Separator />
+
+            {teamMembers.length > 0 ? (
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-gray-700">Team Members</p>
+                {teamMembers.map((member) => (
+                  <div key={member.uid} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">{member.name}</p>
+                      <p className="text-sm text-gray-600">{member.designation} - {member.department}</p>
+                    </div>
+                    <div className="w-48">
+                      <Select
+                        value={teamAttendanceMap[member.uid] || 'present'}
+                        onValueChange={(value) => {
+                          setTeamAttendanceMap({
+                            ...teamAttendanceMap,
+                            [member.uid]: value as AttendanceRecord['status']
+                          });
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="present">Present</SelectItem>
+                          <SelectItem value="half-day">Half Day</SelectItem>
+                          <SelectItem value="absent">Absent</SelectItem>
+                          <SelectItem value="on-leave">On Leave</SelectItem>
+                          <SelectItem value="week-off">Week Off</SelectItem>
+                          <SelectItem value="comp-off">Comp Off</SelectItem>
+                          <SelectItem value="holiday">Holiday</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-600">
+                <Users className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                <p>No team members found</p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => {
@@ -1058,7 +804,7 @@ export default function AttendancePage() {
             }}>
               Cancel
             </Button>
-            <Button onClick={handleMarkAttendance} disabled={loading || !markAttendanceData.userId}>
+            <Button onClick={handleMarkAttendance} disabled={loading || teamMembers.length === 0}>
               {loading ? 'Saving...' : 'Mark Attendance'}
             </Button>
           </DialogFooter>
@@ -1116,7 +862,6 @@ export default function AttendancePage() {
                       <SelectItem value="present">Present</SelectItem>
                       <SelectItem value="absent">Absent</SelectItem>
                       <SelectItem value="half-day">Half Day</SelectItem>
-                      <SelectItem value="work-from-home">Work From Home</SelectItem>
                       <SelectItem value="on-leave">On Leave</SelectItem>
                       <SelectItem value="week-off">Week Off</SelectItem>
                       <SelectItem value="comp-off">Comp Off</SelectItem>
