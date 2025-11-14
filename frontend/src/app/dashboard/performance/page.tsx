@@ -177,7 +177,7 @@ export default function PerformancePage() {
   const fetchEmployees = async () => {
     try {
       const token = await user?.getIdToken();
-      const response = await fetch('http://localhost:8000/api/users/', {
+      const response = await fetch('http://localhost:8000/api/users?page=1&limit=50', {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 

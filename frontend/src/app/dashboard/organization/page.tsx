@@ -48,6 +48,7 @@ import {
   Crown,
   Award,
   RefreshCw,
+  Trash2,
 } from 'lucide-react';
 
 interface User {
@@ -89,11 +90,13 @@ export default function OrganizationPage() {
   const [showUserDialog, setShowUserDialog] = useState(false);
   const [showDepartmentDialog, setShowDepartmentDialog] = useState(false);
   const [showViewDialog, setShowViewDialog] = useState(false);
+  const [showDeleteDeptDialog, setShowDeleteDeptDialog] = useState(false);
   
   // Selected items
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [viewingUser, setViewingUser] = useState<User | null>(null);
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
+  const [deletingDepartment, setDeletingDepartment] = useState<Department | null>(null);
   
   // Form data
   const [userForm, setUserForm] = useState<{
@@ -134,12 +137,12 @@ export default function OrganizationPage() {
     try {
       const token = await user?.getIdToken();
       
-      // Fetch users and departments in parallel
+      // Fetch users and departments in parallel with pagination
       const [usersRes, deptsRes] = await Promise.all([
-        fetch('http://localhost:8000/api/users/?page=1&limit=100', {
+        fetch('http://localhost:8000/api/users?page=1&limit=50', {
           headers: { 'Authorization': `Bearer ${token}` },
         }),
-        fetch('http://localhost:8000/api/departments/', {
+        fetch('http://localhost:8000/api/departments', {
           headers: { 'Authorization': `Bearer ${token}` },
         }),
       ]);
@@ -157,20 +160,22 @@ export default function OrganizationPage() {
         
         setUsers(enrichedUsers);
         buildHierarchy(enrichedUsers);
-      }
-
-      if (deptsRes.ok) {
+        
+        // Update department employee counts with actual user data from frontend
+        // (only if departments have already been loaded)
+        if (deptsRes.ok) {
+          const data = await deptsRes.json();
+          const deptsList = data.departments || [];
+          
+          // Use backend-provided employeeCount (already calculated correctly)
+          // Backend counts ALL users, not just the paginated 50 we fetch here
+          setDepartments(deptsList);
+        }
+      } else if (deptsRes.ok) {
+        // If only departments loaded (no users), use backend counts
         const data = await deptsRes.json();
         const deptsList = data.departments || [];
-        
-        // Enrich departments with head names and employee counts
-        const enrichedDepts = deptsList.map((d: Department) => ({
-          ...d,
-          headName: d.head_id ? users.find(u => u.uid === d.head_id)?.name : undefined,
-          employeeCount: users.filter(u => u.department === d.name).length,
-        }));
-        
-        setDepartments(enrichedDepts);
+        setDepartments(deptsList);
       }
 
     } catch (error) {
@@ -304,6 +309,42 @@ export default function OrganizationPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDeleteDepartment = async () => {
+    if (!deletingDepartment) return;
+    
+    setLoading(true);
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch(`http://localhost:8000/api/departments/${deletingDepartment.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to delete department');
+      }
+
+      toast.success('Department deleted successfully!');
+      setShowDeleteDeptDialog(false);
+      setDeletingDepartment(null);
+      fetchData();
+    } catch (error) {
+      console.error('Delete department error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete department');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openDeleteDepartment = (dept: Department) => {
+    setDeletingDepartment(dept);
+    setShowDeleteDeptDialog(true);
   };
 
   const resetUserForm = () => {
@@ -634,13 +675,25 @@ export default function OrganizationPage() {
                             <Building2 className="h-5 w-5 text-blue-600" />
                             <h3 className="font-semibold text-lg">{dept.name}</h3>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openEditDepartment(dept)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openEditDepartment(dept)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            {isDirector && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => openDeleteDepartment(dept)}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                         
                         {dept.description && (
@@ -999,6 +1052,58 @@ export default function OrganizationPage() {
               disabled={loading || !deptForm.name}
             >
               {loading ? 'Saving...' : editingDepartment ? 'Update' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Department Confirmation Dialog */}
+      <Dialog open={showDeleteDeptDialog} onOpenChange={setShowDeleteDeptDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Department</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this department?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+              <div className="flex gap-3">
+                <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-yellow-800">Warning</p>
+                  <p className="text-sm text-yellow-700 mt-1">
+                    You are about to delete <strong>{deletingDepartment?.name}</strong>.
+                  </p>
+                  <p className="text-sm text-yellow-700 mt-1">
+                    This department has <strong>{deletingDepartment?.employeeCount || 0}</strong> employee(s).
+                    {(deletingDepartment?.employeeCount || 0) > 0 && (
+                      <span className="block mt-1 font-medium">
+                        You must reassign all employees before deleting this department.
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowDeleteDeptDialog(false);
+                setDeletingDepartment(null);
+              }}
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleDeleteDepartment}
+              disabled={loading}
+            >
+              {loading ? 'Deleting...' : 'Delete Department'}
             </Button>
           </DialogFooter>
         </DialogContent>

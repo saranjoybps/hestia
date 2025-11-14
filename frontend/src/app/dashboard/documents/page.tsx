@@ -147,7 +147,7 @@ export default function ExitLettersPage() {
 
       // Fetch employees if HR (for creating requests)
       if (isHR) {
-        const empRes = await fetch('http://localhost:8000/api/users/', {
+        const empRes = await fetch('http://localhost:8000/api/users?page=1&limit=50', {
           headers: { 'Authorization': `Bearer ${token}` },
         });
         if (empRes.ok) {

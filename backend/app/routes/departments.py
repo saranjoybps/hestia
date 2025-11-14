@@ -59,29 +59,43 @@ async def create_department(
 async def list_departments(
     current_user: dict = Depends(get_current_user)
 ):
-    """Get all departments"""
+    """Get all departments - optimized to reduce database queries"""
     try:
+        # Fetch all departments
         docs = db.collection('departments').stream()
+        departments_list = []
         
-        departments = []
         for doc in docs:
             dept_data = doc.to_dict()
             dept_data['id'] = doc.id
+            departments_list.append(dept_data)
+        
+        # Fetch all users in one query
+        all_users = {}
+        users_query = db.collection('users').stream()
+        dept_employee_counts = {}
+        
+        for user in users_query:
+            user_data = user.to_dict()
+            user_id = user.id
+            all_users[user_id] = user_data
             
-            # Get head name if head_id exists
-            if dept_data.get('head_id'):
-                head_doc = db.collection('users').document(dept_data['head_id']).get()
-                if head_doc.exists:
-                    dept_data['headName'] = head_doc.to_dict().get('name', 'Unknown')
+            # Count employees per department
+            dept_name = user_data.get('department')
+            if dept_name:
+                dept_employee_counts[dept_name] = dept_employee_counts.get(dept_name, 0) + 1
+        
+        # Enrich departments with head names and employee counts
+        for dept in departments_list:
+            # Get head name from cached users
+            if dept.get('head_id') and dept['head_id'] in all_users:
+                dept['headName'] = all_users[dept['head_id']].get('name', 'Unknown')
             
-            # Count employees in this department
-            employees = db.collection('users').where('department', '==', dept_data['name']).stream()
-            dept_data['employeeCount'] = len([e for e in employees])
-            
-            departments.append(dept_data)
+            # Get employee count from aggregated counts
+            dept['employeeCount'] = dept_employee_counts.get(dept['name'], 0)
         
         return {
-            "departments": departments
+            "departments": departments_list
         }
         
     except Exception as e:
@@ -193,9 +207,9 @@ async def update_department(
 @router.delete("/{department_id}")
 async def delete_department(
     department_id: str,
-    current_user: dict = Depends(require_role("hr", "director"))
+    current_user: dict = Depends(require_role("director"))
 ):
-    """Delete a department"""
+    """Delete a department - Directors only"""
     try:
         doc_ref = db.collection('departments').document(department_id)
         doc = doc_ref.get()

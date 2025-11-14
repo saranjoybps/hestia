@@ -178,7 +178,7 @@ export default function EmployeesPage() {
   const fetchDepartments = async () => {
     try {
       const token = await user?.getIdToken();
-      const response = await fetch('http://localhost:8000/api/departments/', {
+      const response = await fetch('http://localhost:8000/api/departments', {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       
@@ -247,7 +247,7 @@ export default function EmployeesPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/users?role=manager&role=lead&role=director`,
+        `http://localhost:8000/api/users?role=manager&role=lead&role=director&page=1&limit=50`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }

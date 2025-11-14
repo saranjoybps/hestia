@@ -2,7 +2,8 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Calendar, FileText, TrendingUp, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Users, Calendar, FileText, TrendingUp, Loader2, RefreshCw } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 
@@ -27,6 +28,7 @@ interface Announcement {
 export default function DashboardPage() {
   const { userData, user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState<DashboardStats>({
     totalEmployees: 0,
     presentToday: 0,
@@ -35,33 +37,70 @@ export default function DashboardPage() {
     totalDepartments: 0,
   });
   const [recentAnnouncements, setRecentAnnouncements] = useState<Announcement[]>([]);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
   useEffect(() => {
     if (user) {
       fetchDashboardData();
+      
+      // Auto-refresh every 30 seconds
+      const interval = setInterval(() => {
+        fetchDashboardData();
+      }, 30000);
+      
+      return () => clearInterval(interval);
     }
   }, [user]);
 
   const fetchDashboardData = async () => {
+    // Only show loading spinner on initial load, use refreshing for subsequent updates
+    if (stats.totalEmployees === 0) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
+    
     try {
       const token = await user?.getIdToken();
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const timestamp = Date.now(); // Cache buster
       
-      // Fetch all data in parallel
+      // Fetch all data in parallel with optimized limits and cache busting
       const [usersRes, attendanceRes, leavesRes, announcementsRes, departmentsRes] = await Promise.all([
-        fetch('http://localhost:8000/api/users?page=1&limit=1000', {
-          headers: { 'Authorization': `Bearer ${token}` },
+        fetch(`http://localhost:8000/api/users?page=1&limit=10&_t=${timestamp}`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          },
         }),
-        fetch(`http://localhost:8000/api/attendance?start_date=${format(new Date(), 'yyyy-MM-dd')}&end_date=${format(new Date(), 'yyyy-MM-dd')}`, {
-          headers: { 'Authorization': `Bearer ${token}` },
+        fetch(`http://localhost:8000/api/attendance?start_date=${today}&end_date=${today}&_t=${timestamp}`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          },
         }),
-        fetch('http://localhost:8000/api/leaves?status=pending', {
-          headers: { 'Authorization': `Bearer ${token}` },
+        fetch(`http://localhost:8000/api/leaves?status=pending&page=1&limit=10&_t=${timestamp}`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          },
         }),
-        fetch('http://localhost:8000/api/announcements', {
-          headers: { 'Authorization': `Bearer ${token}` },
+        fetch(`http://localhost:8000/api/announcements?status=published&_t=${timestamp}`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          },
         }),
-        fetch('http://localhost:8000/api/departments', {
-          headers: { 'Authorization': `Bearer ${token}` },
+        fetch(`http://localhost:8000/api/departments?_t=${timestamp}`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          },
         }),
       ]);
 
@@ -90,7 +129,7 @@ export default function DashboardPage() {
       });
 
       // Get recent announcements (published only)
-      const announcements = announcementsData.announcements || [];
+      const announcements = Array.isArray(announcementsData) ? announcementsData : (announcementsData.announcements || []);
       const publishedAnnouncements = announcements
         .filter((a: Announcement) => a.status === 'published')
         .sort((a: Announcement, b: Announcement) => 
@@ -98,11 +137,15 @@ export default function DashboardPage() {
         )
         .slice(0, 3);
       setRecentAnnouncements(publishedAnnouncements);
+      
+      // Update last refresh time
+      setLastRefresh(new Date());
 
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -157,11 +200,26 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-500 mt-1">
-          Overview of your HR management system
-        </p>
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+          <p className="text-gray-500 mt-1">
+            Overview of your HR management system
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            Last updated: {format(lastRefresh, 'MMM dd, yyyy HH:mm:ss')} • Auto-refreshes every 30s
+          </p>
+        </div>
+        <Button 
+          onClick={() => fetchDashboardData()} 
+          disabled={loading || refreshing}
+          variant="outline"
+          size="sm"
+          className="gap-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${(loading || refreshing) ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
       </div>
 
       {/* Stats Grid */}

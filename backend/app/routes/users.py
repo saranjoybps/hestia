@@ -72,6 +72,7 @@ async def register_user(
 async def list_users(
     department: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
+    role: Optional[list[str]] = Query(None),
     search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
@@ -79,40 +80,74 @@ async def list_users(
 ):
     """
     List users with filtering and pagination
+    Optimized to reduce database reads
     """
     try:
         query = db.collection("users")
         
-        # Apply filters
+        # Apply filters at database level
         if department:
             query = query.where("department", "==", department)
         if status_filter:
             query = query.where("status", "==", status_filter)
         
-        # Execute query
-        users = query.stream()
+        # Handle role filter (can be multiple roles)
+        if role and len(role) > 0 and len(role) <= 10:
+            # Firestore 'in' query supports up to 10 values
+            query = query.where("role", "in", role)
         
-        # Convert to list and apply search
-        user_list = []
-        for user in users:
-            user_data = user.to_dict()
-            user_data["uid"] = user.id
+        # For search queries or counting, we need to fetch the results
+        # Firestore doesn't support efficient counting without fetching
+        if search:
+            # Search requires client-side filtering
+            users = query.stream()
+            user_list = []
             
-            # Apply search filter
-            if search:
+            for user in users:
+                user_data = user.to_dict()
+                user_data["uid"] = user.id
+                
+                # Apply search filter
                 if search.lower() in user_data.get("name", "").lower() or \
                    search.lower() in user_data.get("email", "").lower():
                     user_list.append(user_data)
+            
+            # Get total count and paginate in memory
+            total = len(user_list)
+            start = (page - 1) * limit
+            end = start + limit
+            paginated_users = user_list[start:end]
+            
+        else:
+            # No search - use database-level pagination for better performance
+            # Calculate offset
+            offset = (page - 1) * limit
+            
+            # Fetch one extra record to check if there are more pages
+            # This avoids expensive count queries
+            paginated_query = query.limit(limit + 1).offset(offset)
+            
+            paginated_users = []
+            has_more = False
+            
+            for idx, user in enumerate(paginated_query.stream()):
+                if idx < limit:
+                    user_data = user.to_dict()
+                    user_data["uid"] = user.id
+                    paginated_users.append(user_data)
+                else:
+                    # Found the extra record, so there are more pages
+                    has_more = True
+                    break
+            
+            # Estimate total (not exact, but avoids expensive count)
+            # For exact count on first page, do a quick count
+            if page == 1 and not has_more:
+                # We're on first page and no more results, so count is accurate
+                total = len(paginated_users)
             else:
-                user_list.append(user_data)
-        
-        # Get total count
-        total = len(user_list)
-        
-        # Apply pagination
-        start = (page - 1) * limit
-        end = start + limit
-        paginated_users = user_list[start:end]
+                # Estimate: current page items + pages * limit + (1 if more)
+                total = offset + len(paginated_users) + (limit if has_more else 0)
         
         # Convert to response models
         user_responses = [UserResponse(**user) for user in paginated_users]
@@ -122,7 +157,7 @@ async def list_users(
             "total": total,
             "page": page,
             "limit": limit,
-            "totalPages": (total + limit - 1) // limit
+            "totalPages": (total + limit - 1) // limit if total > 0 else 1
         }
         
     except Exception as e:

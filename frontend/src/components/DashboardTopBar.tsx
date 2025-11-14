@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -11,12 +12,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Bell, Settings, LogOut, User } from 'lucide-react';
+import { Bell, Settings, LogOut, User, Moon, Sun } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 
 export default function DashboardTopBar() {
   const { userData, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -49,9 +51,9 @@ export default function DashboardTopBar() {
   };
 
   return (
-    <header className="border-b bg-white h-16 flex items-center justify-between px-6">
+    <header className="border-b bg-white dark:bg-gray-900 dark:border-gray-800 h-16 flex items-center justify-between px-6">
       <div className="flex items-center gap-4">
-        <h2 className="text-xl font-semibold text-gray-800">
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
           Welcome back, {userData?.name || 'User'}
         </h2>
         {userData?.role && (
@@ -62,6 +64,20 @@ export default function DashboardTopBar() {
       </div>
       
       <div className="flex items-center gap-3">
+        {/* Dark Mode Toggle */}
+        <Button 
+          variant="ghost" 
+          size="icon"
+          onClick={toggleTheme}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {theme === 'dark' ? (
+            <Sun className="h-5 w-5" />
+          ) : (
+            <Moon className="h-5 w-5" />
+          )}
+        </Button>
+
         {/* Notifications */}
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />
