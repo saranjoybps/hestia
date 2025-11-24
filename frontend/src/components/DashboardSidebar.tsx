@@ -16,6 +16,8 @@ import {
   UserCircle,
   BarChart3,
   Building2,
+  Clock,
+  UserPlus,
 } from 'lucide-react';
 
 interface NavItem {
@@ -47,6 +49,11 @@ const navItems: NavItem[] = [
     icon: FileText,
   },
   {
+    title: 'Shifts',
+    href: '/dashboard/shifts',
+    icon: Clock,
+  },
+  {
     title: 'Tasks',
     href: '/tasks',
     icon: CheckSquare,
@@ -55,6 +62,12 @@ const navItems: NavItem[] = [
     title: 'Performance',
     href: '/performance',
     icon: TrendingUp,
+  },
+  {
+    title: 'Onboarding',
+    href: '/dashboard/employees',
+    icon: UserPlus,
+    roles: ['manager', 'director', 'hr'],
   },
   {
     title: 'Documents',

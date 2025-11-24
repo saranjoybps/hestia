@@ -301,6 +301,96 @@ class AnnouncementResponse(BaseModel):
         from_attributes = True
 
 
+# Employee Onboarding Request Models
+class OnboardingRequestCreate(BaseModel):
+    """Create employee onboarding request"""
+    email: EmailStr
+    name: str
+    phone: Optional[str] = None
+    role: Literal["employee", "lead", "manager", "hr", "director"] = "employee"
+    department: Optional[str] = None
+    designation: Optional[str] = None
+    manager_id: Optional[str] = None
+    lead_id: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class OnboardingRequestUpdate(BaseModel):
+    """Update onboarding request"""
+    status: Optional[Literal["pending", "approved", "rejected"]] = None
+    rejection_reason: Optional[str] = None
+
+
+class OnboardingRequestResponse(BaseModel):
+    """Onboarding request response"""
+    id: str
+    email: EmailStr
+    name: str
+    phone: Optional[str] = None
+    role: str
+    department: Optional[str] = None
+    designation: Optional[str] = None
+    manager_id: Optional[str] = None
+    lead_id: Optional[str] = None
+    notes: Optional[str] = None
+    status: Literal["pending", "approved", "rejected"]
+    requested_by: str
+    requested_by_name: str
+    reviewed_by: Optional[str] = None
+    reviewed_by_name: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    created_at: datetime
+    reviewed_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+
+# Shift Models
+class ShiftBase(BaseModel):
+    """Base shift model"""
+    employee_id: str
+    shift_type: Literal["morning", "afternoon", "evening", "night", "rotating"] = "morning"
+    shift_date: str  # Format: YYYY-MM-DD
+    start_time: str  # Format: HH:MM
+    end_time: str  # Format: HH:MM
+    notes: Optional[str] = None
+
+
+class ShiftCreate(ShiftBase):
+    """Shift creation model"""
+    pass
+
+
+class ShiftUpdate(BaseModel):
+    """Shift update model"""
+    shift_type: Optional[Literal["morning", "afternoon", "evening", "night", "rotating"]] = None
+    shift_date: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[Literal["pending", "approved", "rejected"]] = None
+    rejection_reason: Optional[str] = None
+
+
+class ShiftResponse(ShiftBase):
+    """Shift response model"""
+    id: str
+    status: Literal["pending", "approved", "rejected"]
+    created_by: str
+    created_by_name: Optional[str] = None
+    approved_by: Optional[str] = None
+    approved_by_name: Optional[str] = None
+    employee_name: Optional[str] = None
+    employee_email: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+
 # Permission Models
 class PermissionBase(BaseModel):
     """Base permission model"""

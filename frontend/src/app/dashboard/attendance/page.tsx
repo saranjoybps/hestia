@@ -93,6 +93,7 @@ export default function AttendancePage() {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<string>('me');
+  const [teamShifts, setTeamShifts] = useState<Record<string, { shift_type: string; start_time: string; end_time: string; status: string } | null>>({});
   
   // Dialogs
   const [showMarkAttendanceDialog, setShowMarkAttendanceDialog] = useState(false);
@@ -170,6 +171,40 @@ export default function AttendancePage() {
       }
     } catch (error) {
       console.error('Error fetching attendance:', error);
+    }
+  };
+
+  const fetchTeamShiftsForDate = async (date: string) => {
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch(
+        `http://localhost:8000/api/shifts`,
+        {
+          headers: { 'Authorization': `Bearer ${token}` },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const shifts = data.shifts || [];
+        
+        // Create a map of employee_id to shift for the selected date
+        const shiftsMap: Record<string, any> = {};
+        shifts.forEach((shift: any) => {
+          if (shift.shift_date === date && shift.status === 'approved') {
+            shiftsMap[shift.employee_id] = {
+              shift_type: shift.shift_type,
+              start_time: shift.start_time,
+              end_time: shift.end_time,
+              status: shift.status,
+            };
+          }
+        });
+        
+        setTeamShifts(shiftsMap);
+      }
+    } catch (error) {
+      console.error('Error fetching team shifts:', error);
     }
   };
 
@@ -395,6 +430,8 @@ export default function AttendancePage() {
                 initialMap[member.uid] = 'present';
               });
               setTeamAttendanceMap(initialMap);
+              // Fetch shifts for the selected date
+              fetchTeamShiftsForDate(markAttendanceData.date);
               setShowMarkAttendanceDialog(true);
             }}>
               <Users className="h-4 w-4 mr-2" />
@@ -747,7 +784,11 @@ export default function AttendancePage() {
                 id="attendance-date"
                 type="date"
                 value={markAttendanceData.date}
-                onChange={(e) => setMarkAttendanceData({ ...markAttendanceData, date: e.target.value })}
+                onChange={(e) => {
+                  setMarkAttendanceData({ ...markAttendanceData, date: e.target.value });
+                  // Fetch shifts for the new date
+                  fetchTeamShiftsForDate(e.target.value);
+                }}
                 className="max-w-xs"
               />
             </div>
@@ -756,42 +797,66 @@ export default function AttendancePage() {
 
             {teamMembers.length > 0 ? (
               <div className="space-y-3">
-                <p className="text-sm font-medium text-gray-700">Team Members</p>
-                {teamMembers.map((member) => (
-                  <div key={member.uid} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">{member.name}</p>
-                      <p className="text-sm text-gray-600">{member.designation} - {member.department}</p>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Team Members</p>
+                {teamMembers.map((member) => {
+                  const shift = teamShifts[member.uid];
+                  const selectedDate = new Date(markAttendanceData.date);
+                  const dayOfWeek = selectedDate.getDay();
+                  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                  
+                  return (
+                    <div key={member.uid} className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-medium text-gray-900 dark:text-gray-100">{member.name}</p>
+                          {shift ? (
+                            <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800">
+                              <Clock className="h-3 w-3 mr-1" />
+                              {shift.shift_type.charAt(0).toUpperCase() + shift.shift_type.slice(1)} ({shift.start_time} - {shift.end_time})
+                            </Badge>
+                          ) : isWeekend ? (
+                            <Badge variant="outline" className="text-xs bg-orange-50 dark:bg-orange-950 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800">
+                              <CalendarIcon className="h-3 w-3 mr-1" />
+                              Weekend
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400">
+                              No Shift Assigned
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">{member.designation} - {member.department}</p>
+                      </div>
+                      <div className="w-48 flex-shrink-0">
+                        <Select
+                          value={teamAttendanceMap[member.uid] || 'present'}
+                          onValueChange={(value) => {
+                            setTeamAttendanceMap({
+                              ...teamAttendanceMap,
+                              [member.uid]: value as AttendanceRecord['status']
+                            });
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="present">Present</SelectItem>
+                            <SelectItem value="half-day">Half Day</SelectItem>
+                            <SelectItem value="absent">Absent</SelectItem>
+                            <SelectItem value="on-leave">On Leave</SelectItem>
+                            <SelectItem value="week-off">Week Off</SelectItem>
+                            <SelectItem value="comp-off">Comp Off</SelectItem>
+                            <SelectItem value="holiday">Holiday</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                    <div className="w-48">
-                      <Select
-                        value={teamAttendanceMap[member.uid] || 'present'}
-                        onValueChange={(value) => {
-                          setTeamAttendanceMap({
-                            ...teamAttendanceMap,
-                            [member.uid]: value as AttendanceRecord['status']
-                          });
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="present">Present</SelectItem>
-                          <SelectItem value="half-day">Half Day</SelectItem>
-                          <SelectItem value="absent">Absent</SelectItem>
-                          <SelectItem value="on-leave">On Leave</SelectItem>
-                          <SelectItem value="week-off">Week Off</SelectItem>
-                          <SelectItem value="comp-off">Comp Off</SelectItem>
-                          <SelectItem value="holiday">Holiday</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-600">
+              <div className="text-center py-8 text-gray-600 dark:text-gray-400">
                 <Users className="h-12 w-12 text-gray-400 mx-auto mb-3" />
                 <p>No team members found</p>
               </div>
