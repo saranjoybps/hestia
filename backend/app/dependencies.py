@@ -3,12 +3,22 @@ from firebase_admin import credentials, auth, firestore
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
+import json
+import os
 from app.config import get_settings
 
 settings = get_settings()
 
 # Initialize Firebase Admin SDK
-cred = credentials.Certificate(settings.firebase_credentials_path)
+# Check if Firebase credentials are provided via environment variable (for Render)
+if os.getenv('FIREBASE_CREDENTIALS'):
+    # Parse credentials from environment variable
+    firebase_creds = json.loads(os.getenv('FIREBASE_CREDENTIALS'))
+    cred = credentials.Certificate(firebase_creds)
+else:
+    # Use credentials file (for local development)
+    cred = credentials.Certificate(settings.firebase_credentials_path)
+
 firebase_admin.initialize_app(cred)
 
 # Firestore client
