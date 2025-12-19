@@ -9,3 +9,4 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.12
 email-validator==2.2.0
 aiohttp==3.10.10
+reportlab==4.0.7
