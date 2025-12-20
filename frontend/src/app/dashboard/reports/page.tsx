@@ -1,5 +1,7 @@
 'use client';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -147,16 +149,16 @@ export default function ReportsPage() {
 
       // Fetch all reports in parallel
       const [attendanceRes, leaveRes, performanceRes, employeeRes] = await Promise.all([
-        fetch(`http://localhost:8000/api/reports/attendance?${params}`, {
+        fetch(`${API_BASE_URL}/reports/attendance?${params}`, {
           headers: { 'Authorization': `Bearer ${token}` },
         }),
-        fetch(`http://localhost:8000/api/reports/leaves?${params}`, {
+        fetch(`${API_BASE_URL}/reports/leaves?${params}`, {
           headers: { 'Authorization': `Bearer ${token}` },
         }),
-        fetch(`http://localhost:8000/api/reports/performance?${params}`, {
+        fetch(`${API_BASE_URL}/reports/performance?${params}`, {
           headers: { 'Authorization': `Bearer ${token}` },
         }),
-        fetch(`http://localhost:8000/api/reports/employees?${params}`, {
+        fetch(`${API_BASE_URL}/reports/employees?${params}`, {
           headers: { 'Authorization': `Bearer ${token}` },
         }),
       ]);
@@ -218,7 +220,7 @@ export default function ReportsPage() {
       });
 
       const response = await fetch(
-        `http://localhost:8000/api/reports/export/${type}?${params}`,
+        `${API_BASE_URL}/reports/export/${type}?${params}`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }

@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 import {
   Dialog,
   DialogContent,
@@ -139,10 +141,10 @@ export default function OrganizationPage() {
       
       // Fetch users and departments in parallel with pagination
       const [usersRes, deptsRes] = await Promise.all([
-        fetch('http://localhost:8000/api/users?page=1&limit=50', {
+        fetch(`${API_BASE_URL}/users?page=1&limit=50`, {
           headers: { 'Authorization': `Bearer ${token}` },
         }),
-        fetch('http://localhost:8000/api/departments', {
+        fetch(`${API_BASE_URL}/departments`, {
           headers: { 'Authorization': `Bearer ${token}` },
         }),
       ]);
@@ -242,7 +244,7 @@ export default function OrganizationPage() {
       
       console.log('Updating user with data:', updateData);
       
-      const response = await fetch(`http://localhost:8000/api/users/${selectedUser.uid}`, {
+      const response = await fetch(`${API_BASE_URL}/users/${selectedUser.uid}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -281,8 +283,8 @@ export default function OrganizationPage() {
     try {
       const token = await user?.getIdToken();
       const url = editingDepartment 
-        ? `http://localhost:8000/api/departments/${editingDepartment.id}`
-        : 'http://localhost:8000/api/departments/';
+        ? `${API_BASE_URL}/departments/${editingDepartment.id}`
+        : `${API_BASE_URL}/departments/`;
       
       const response = await fetch(url, {
         method: editingDepartment ? 'PUT' : 'POST',
@@ -317,7 +319,7 @@ export default function OrganizationPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      const response = await fetch(`http://localhost:8000/api/departments/${deletingDepartment.id}`, {
+      const response = await fetch(`${API_BASE_URL}/departments/${deletingDepartment.id}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',

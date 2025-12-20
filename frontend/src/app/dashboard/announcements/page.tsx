@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 import {
   Dialog,
   DialogContent,
@@ -133,7 +135,7 @@ export default function AnnouncementsPage() {
         ...(statusFilter !== 'all' && { status: statusFilter }),
       });
 
-      const response = await fetch(`http://localhost:8000/api/announcements?${params}`, {
+      const response = await fetch(`${API_BASE_URL}/announcements?${params}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -156,7 +158,7 @@ export default function AnnouncementsPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/announcements/my-announcements`,
+        `${API_BASE_URL}/announcements/my-announcements`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }
@@ -175,7 +177,7 @@ export default function AnnouncementsPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      const response = await fetch('http://localhost:8000/api/announcements', {
+      const response = await fetch(`${API_BASE_URL}/announcements`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -213,7 +215,7 @@ export default function AnnouncementsPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/announcements/${editingAnnouncement.id}`,
+        `${API_BASE_URL}/announcements/${editingAnnouncement.id}`,
         {
           method: 'PUT',
           headers: {
@@ -250,7 +252,7 @@ export default function AnnouncementsPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/announcements/${deletingAnnouncement.id}`,
+        `${API_BASE_URL}/announcements/${deletingAnnouncement.id}`,
         {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` },
@@ -279,7 +281,7 @@ export default function AnnouncementsPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/announcements/${announcement.id}/pin`,
+        `${API_BASE_URL}/announcements/${announcement.id}/pin`,
         {
           method: 'POST',
           headers: {

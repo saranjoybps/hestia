@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 import {
   Table,
   TableBody,
@@ -145,7 +147,7 @@ export default function LeavesPage() {
         ...(typeFilter !== 'all' && { leave_type: typeFilter }),
       });
 
-      const response = await fetch(`http://localhost:8000/api/leaves?${params}`, {
+      const response = await fetch(`${API_BASE_URL}/leaves?${params}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -162,7 +164,7 @@ export default function LeavesPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/leaves/pending-approvals`,
+        `${API_BASE_URL}/leaves/pending-approvals`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }
@@ -181,7 +183,7 @@ export default function LeavesPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/leaves/balance/${userData?.uid}`,
+        `${API_BASE_URL}/leaves/balance/${userData?.uid}`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }
@@ -200,7 +202,7 @@ export default function LeavesPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/leaves/stats`,
+        `${API_BASE_URL}/leaves/stats`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }
@@ -228,7 +230,7 @@ export default function LeavesPage() {
         return;
       }
 
-      const response = await fetch('http://localhost:8000/api/leaves', {
+      const response = await fetch(`${API_BASE_URL}/leaves`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -269,7 +271,7 @@ export default function LeavesPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/leaves/${processingLeave.id}/approve`,
+        `${API_BASE_URL}/leaves/${processingLeave.id}/approve`,
         {
           method: 'POST',
           headers: {
@@ -308,7 +310,7 @@ export default function LeavesPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/leaves/${processingLeave.id}/reject`,
+        `${API_BASE_URL}/leaves/${processingLeave.id}/reject`,
         {
           method: 'POST',
           headers: {

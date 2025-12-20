@@ -1,5 +1,7 @@
 'use client';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -147,7 +149,7 @@ export default function ExitLettersPage() {
 
       // Fetch employees if HR (for creating requests)
       if (isHR) {
-        const empRes = await fetch('http://localhost:8000/api/users?page=1&limit=50', {
+        const empRes = await fetch(`${API_BASE_URL}/users?page=1&limit=50`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
         if (empRes.ok) {
@@ -157,7 +159,7 @@ export default function ExitLettersPage() {
       }
 
       // Fetch all requests
-      const reqRes = await fetch('http://localhost:8000/api/letters/requests', {
+      const reqRes = await fetch(`${API_BASE_URL}/letters/requests`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (reqRes.ok) {
@@ -167,7 +169,7 @@ export default function ExitLettersPage() {
 
       // Fetch pending requests (for Directors)
       if (isDirector) {
-        const pendingRes = await fetch('http://localhost:8000/api/letters/pending', {
+        const pendingRes = await fetch(`${API_BASE_URL}/letters/pending`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
         if (pendingRes.ok) {
@@ -177,7 +179,7 @@ export default function ExitLettersPage() {
       }
 
       // Fetch issued letters
-      const issuedRes = await fetch('http://localhost:8000/api/letters/issued', {
+      const issuedRes = await fetch(`${API_BASE_URL}/letters/issued`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       if (issuedRes.ok) {
@@ -203,7 +205,7 @@ export default function ExitLettersPage() {
         throw new Error('Employee not found');
       }
 
-      const response = await fetch('http://localhost:8000/api/letters/request', {
+      const response = await fetch(`${API_BASE_URL}/letters/request`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -249,7 +251,7 @@ export default function ExitLettersPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/letters/approve/${processingRequest.id}`,
+        `${API_BASE_URL}/letters/approve/${processingRequest.id}`,
         {
           method: 'POST',
           headers: {
@@ -287,7 +289,7 @@ export default function ExitLettersPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/letters/reject/${processingRequest.id}`,
+        `${API_BASE_URL}/letters/reject/${processingRequest.id}`,
         {
           method: 'POST',
           headers: {
@@ -323,7 +325,7 @@ export default function ExitLettersPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/letters/download/${letter.id}`,
+        `${API_BASE_URL}/letters/download/${letter.id}`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }
