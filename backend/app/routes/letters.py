@@ -337,6 +337,9 @@ async def create_letter_request(
             )
         
         # Create request document
+        # If submitted by director, auto-approve and generate PDF
+        is_director = current_user.get('role') == 'director'
+        
         letter_data = {
             "employeeId": request.employeeId,
             "employeeName": request.employeeName,
@@ -350,10 +353,18 @@ async def create_letter_request(
             "requestedBy": request.requestedBy,
             "requestedByName": request.requestedByName,
             "requestedOn": datetime.now().isoformat(),
-            "status": "pending",
+            "status": "approved" if is_director else "pending",
             "employmentPeriod": employment_period,
             "joinDate": request.joinDate,
         }
+        
+        # If director, add approval info immediately
+        if is_director:
+            letter_data.update({
+                "approvedBy": current_user.get('uid'),
+                "approverName": current_user.get('name'),
+                "approvedOn": datetime.now().isoformat(),
+            })
         
         # Add offer letter specific fields
         if request.letterType == 'offer':
@@ -368,9 +379,73 @@ async def create_letter_request(
         doc_ref = db.collection('letter_requests').add(letter_data)
         letter_id = doc_ref[1].id
         
+        # If director submitted, generate PDF immediately
+        if is_director:
+            letter_data['referenceNumber'] = f"JOYRTS/HR/{datetime.now().strftime('%Y%m%d')}/{request.employeeId}"
+            
+            if request.letterType == 'both':
+                # Generate both letters
+                exp_pdf = generate_letter_pdf(letter_data, 'experience')
+                exit_pdf = generate_letter_pdf(letter_data, 'exit')
+                
+                # Upload to Google Drive
+                exp_file = drive_service.upload_file(
+                    f"{request.employeeName.replace(' ', '_')}_experience_certificate.pdf",
+                    exp_pdf,
+                    'application/pdf'
+                )
+                exit_file = drive_service.upload_file(
+                    f"{request.employeeName.replace(' ', '_')}_exit_letter.pdf",
+                    exit_pdf,
+                    'application/pdf'
+                )
+                
+                # Update request with file info
+                db.collection('letter_requests').document(letter_id).update({
+                    'experience_letter_link': exp_file['webViewLink'],
+                    'experience_file_id': exp_file['id'],
+                    'exit_letter_link': exit_file['webViewLink'],
+                    'exit_file_id': exit_file['id'],
+                    'pdfFiles': [
+                        {
+                            'type': 'experience',
+                            'filename': exp_file['name'],
+                            'file_id': exp_file['id'],
+                            'web_view_link': exp_file['webViewLink']
+                        },
+                        {
+                            'type': 'exit',
+                            'filename': exit_file['name'],
+                            'file_id': exit_file['id'],
+                            'web_view_link': exit_file['webViewLink']
+                        }
+                    ]
+                })
+            else:
+                # Generate single letter
+                pdf_buffer = generate_letter_pdf(letter_data, request.letterType)
+                
+                letter_type_name = 'offer_letter' if request.letterType == 'offer' else f'{request.letterType}_letter'
+                filename = f"{request.employeeName.replace(' ', '_')}_{letter_type_name}.pdf"
+                
+                # Upload to Google Drive
+                file_info = drive_service.upload_file(filename, pdf_buffer, 'application/pdf')
+                
+                # Update request with file info
+                db.collection('letter_requests').document(letter_id).update({
+                    f'{request.letterType}_letter_link': file_info['webViewLink'],
+                    f'{request.letterType}_file_id': file_info['id'],
+                    'pdfFiles': [{
+                        'type': request.letterType,
+                        'filename': file_info['name'],
+                        'file_id': file_info['id'],
+                        'web_view_link': file_info['webViewLink']
+                    }]
+                })
+        
         return {
             "id": letter_id,
-            "message": "Letter request submitted successfully",
+            "message": "Letter generated and approved successfully" if is_director else "Letter request submitted successfully",
             **letter_data
         }
         
