@@ -1,5 +1,7 @@
 'use client';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -115,7 +117,7 @@ export default function TasksPage() {
   const fetchTasks = async () => {
     try {
       const token = await user?.getIdToken();
-      const response = await fetch('http://localhost:8000/api/tasks', {
+      const response = await fetch(`${API_BASE_URL}/tasks`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -131,7 +133,7 @@ export default function TasksPage() {
   const fetchEmployees = async () => {
     try {
       const token = await user?.getIdToken();
-      const response = await fetch('http://localhost:8000/api/users/', {
+      const response = await fetch(`${API_BASE_URL}/users/`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -155,7 +157,7 @@ export default function TasksPage() {
         throw new Error('Assignee not found');
       }
 
-      const response = await fetch('http://localhost:8000/api/tasks', {
+      const response = await fetch(`${API_BASE_URL}/tasks`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -206,7 +208,7 @@ export default function TasksPage() {
       }
 
       const response = await fetch(
-        `http://localhost:8000/api/tasks/${editingTask.id}`,
+        `${API_BASE_URL}/tasks/${editingTask.id}`,
         {
           method: 'PUT',
           headers: {
@@ -242,7 +244,7 @@ export default function TasksPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/tasks/${deletingTask.id}`,
+        `${API_BASE_URL}/tasks/${deletingTask.id}`,
         {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` },
@@ -270,7 +272,7 @@ export default function TasksPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/tasks/${taskId}/status`,
+        `${API_BASE_URL}/tasks/${taskId}/status`,
         {
           method: 'PATCH',
           headers: {

@@ -1,5 +1,7 @@
 'use client';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -67,35 +69,35 @@ export default function DashboardPage() {
       
       // Fetch all data in parallel with optimized limits and cache busting
       const [usersRes, attendanceRes, leavesRes, announcementsRes, departmentsRes] = await Promise.all([
-        fetch(`http://localhost:8000/api/users?page=1&limit=10&_t=${timestamp}`, {
+        fetch(`${API_BASE_URL}/users?page=1&limit=10&_t=${timestamp}`, {
           headers: { 
             'Authorization': `Bearer ${token}`,
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache'
           },
         }),
-        fetch(`http://localhost:8000/api/attendance?start_date=${today}&end_date=${today}&_t=${timestamp}`, {
+        fetch(`${API_BASE_URL}/attendance?start_date=${today}&end_date=${today}&_t=${timestamp}`, {
           headers: { 
             'Authorization': `Bearer ${token}`,
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache'
           },
         }),
-        fetch(`http://localhost:8000/api/leaves?status=pending&page=1&limit=10&_t=${timestamp}`, {
+        fetch(`${API_BASE_URL}/leaves?status=pending&page=1&limit=10&_t=${timestamp}`, {
           headers: { 
             'Authorization': `Bearer ${token}`,
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache'
           },
         }),
-        fetch(`http://localhost:8000/api/announcements?status=published&_t=${timestamp}`, {
+        fetch(`${API_BASE_URL}/announcements?status=published&_t=${timestamp}`, {
           headers: { 
             'Authorization': `Bearer ${token}`,
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache'
           },
         }),
-        fetch(`http://localhost:8000/api/departments?_t=${timestamp}`, {
+        fetch(`${API_BASE_URL}/departments?_t=${timestamp}`, {
           headers: { 
             'Authorization': `Bearer ${token}`,
             'Cache-Control': 'no-cache, no-store, must-revalidate',

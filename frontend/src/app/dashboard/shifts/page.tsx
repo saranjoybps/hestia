@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 import {
   Table,
   TableBody,
@@ -151,7 +153,7 @@ export default function ShiftsPage() {
   const fetchReportees = async () => {
     try {
       const token = await user?.getIdToken();
-      const response = await fetch('http://localhost:8000/api/users', {
+      const response = await fetch(`${API_BASE_URL}/users`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -177,7 +179,7 @@ export default function ShiftsPage() {
   const fetchShifts = async () => {
     try {
       const token = await user?.getIdToken();
-      const response = await fetch('http://localhost:8000/api/shifts', {
+      const response = await fetch(`${API_BASE_URL}/shifts`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -200,7 +202,7 @@ export default function ShiftsPage() {
   const fetchPendingApprovals = async () => {
     try {
       const token = await user?.getIdToken();
-      const response = await fetch('http://localhost:8000/api/shifts/pending-approvals', {
+      const response = await fetch(`${API_BASE_URL}/shifts/pending-approvals`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -223,7 +225,7 @@ export default function ShiftsPage() {
     try {
       const token = await user?.getIdToken();
       
-      const response = await fetch('http://localhost:8000/api/shifts', {
+      const response = await fetch(`${API_BASE_URL}/shifts`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -304,7 +306,7 @@ export default function ShiftsPage() {
       
       for (const shiftData of shiftsToCreate) {
         try {
-          const response = await fetch('http://localhost:8000/api/shifts', {
+          const response = await fetch(`${API_BASE_URL}/shifts`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -347,7 +349,7 @@ export default function ShiftsPage() {
     try {
       const token = await user?.getIdToken();
       
-      const response = await fetch(`http://localhost:8000/api/shifts/${editingShift.id}`, {
+      const response = await fetch(`${API_BASE_URL}/shifts/${editingShift.id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -379,7 +381,7 @@ export default function ShiftsPage() {
     try {
       const token = await user?.getIdToken();
       
-      const response = await fetch(`http://localhost:8000/api/shifts/${shiftId}/approve`, {
+      const response = await fetch(`${API_BASE_URL}/shifts/${shiftId}/approve`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -408,7 +410,7 @@ export default function ShiftsPage() {
     try {
       const token = await user?.getIdToken();
       
-      const response = await fetch(`http://localhost:8000/api/shifts/${shiftId}/reject`, {
+      const response = await fetch(`${API_BASE_URL}/shifts/${shiftId}/reject`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -438,7 +440,7 @@ export default function ShiftsPage() {
     try {
       const token = await user?.getIdToken();
       
-      const response = await fetch(`http://localhost:8000/api/shifts/${shiftId}`, {
+      const response = await fetch(`${API_BASE_URL}/shifts/${shiftId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,

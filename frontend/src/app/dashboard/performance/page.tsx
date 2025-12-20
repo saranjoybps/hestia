@@ -1,5 +1,7 @@
 'use client';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -142,7 +144,7 @@ export default function PerformancePage() {
   const fetchReviews = async () => {
     try {
       const token = await user?.getIdToken();
-      const response = await fetch('http://localhost:8000/api/performance', {
+      const response = await fetch(`${API_BASE_URL}/performance`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -159,7 +161,7 @@ export default function PerformancePage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        'http://localhost:8000/api/performance/pending-approvals',
+        `${API_BASE_URL}/performance/pending-approvals`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }
@@ -177,7 +179,7 @@ export default function PerformancePage() {
   const fetchEmployees = async () => {
     try {
       const token = await user?.getIdToken();
-      const response = await fetch('http://localhost:8000/api/users?page=1&limit=50', {
+      const response = await fetch(`${API_BASE_URL}/users?page=1&limit=50`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -194,7 +196,7 @@ export default function PerformancePage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        'http://localhost:8000/api/performance/stats',
+        `${API_BASE_URL}/performance/stats`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }
@@ -220,7 +222,7 @@ export default function PerformancePage() {
         throw new Error('Employee not found');
       }
 
-      const response = await fetch('http://localhost:8000/api/performance', {
+      const response = await fetch(`${API_BASE_URL}/performance`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -263,7 +265,7 @@ export default function PerformancePage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/performance/${processingReview.id}/approve`,
+        `${API_BASE_URL}/performance/${processingReview.id}/approve`,
         {
           method: 'POST',
           headers: {
@@ -303,7 +305,7 @@ export default function PerformancePage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/performance/${processingReview.id}/reject`,
+        `${API_BASE_URL}/performance/${processingReview.id}/reject`,
         {
           method: 'POST',
           headers: {

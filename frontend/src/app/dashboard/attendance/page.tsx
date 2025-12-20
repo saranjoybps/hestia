@@ -1,5 +1,7 @@
 'use client';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -140,7 +142,7 @@ export default function AttendancePage() {
   const fetchTeamMembers = async () => {
     try {
       const token = await user?.getIdToken();
-      const response = await fetch(`http://localhost:8000/api/users/${userData?.uid}/reportees`, {
+      const response = await fetch(`${API_BASE_URL}/users/${userData?.uid}/reportees`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -159,7 +161,7 @@ export default function AttendancePage() {
       const userId = selectedEmployee === 'me' ? userData?.uid : selectedEmployee;
       
       const response = await fetch(
-        `http://localhost:8000/api/attendance?user_id=${userId}&start_date=${filterStartDate}&end_date=${filterEndDate}`,
+        `${API_BASE_URL}/attendance?user_id=${userId}&start_date=${filterStartDate}&end_date=${filterEndDate}`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }
@@ -178,7 +180,7 @@ export default function AttendancePage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/shifts`,
+        `${API_BASE_URL}/shifts`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }
@@ -215,7 +217,7 @@ export default function AttendancePage() {
       
       // Mark attendance for all team members
       const promises = Object.entries(teamAttendanceMap).map(async ([userId, status]) => {
-        const response = await fetch('http://localhost:8000/api/attendance', {
+        const response = await fetch(`${API_BASE_URL}/attendance`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -261,7 +263,7 @@ export default function AttendancePage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      const response = await fetch(`http://localhost:8000/api/attendance/${editingRecord.id}`, {
+      const response = await fetch(`${API_BASE_URL}/attendance/${editingRecord.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 import {
   Table,
   TableBody,
@@ -206,7 +208,7 @@ export default function EmployeesPage() {
   const fetchDepartments = async () => {
     try {
       const token = await user?.getIdToken();
-      const response = await fetch('http://localhost:8000/api/departments', {
+      const response = await fetch(`${API_BASE_URL}/departments`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
       
@@ -231,7 +233,7 @@ export default function EmployeesPage() {
         ...(roleFilter !== 'all' && { role: roleFilter }),
       });
 
-      const response = await fetch(`http://localhost:8000/api/users?${params}`, {
+      const response = await fetch(`${API_BASE_URL}/users?${params}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -256,7 +258,7 @@ export default function EmployeesPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/users/${userData?.uid}/reportees`,
+        `${API_BASE_URL}/users/${userData?.uid}/reportees`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }
@@ -275,7 +277,7 @@ export default function EmployeesPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/users?role=manager&role=lead&role=director&page=1&limit=50`,
+        `${API_BASE_URL}/users?role=manager&role=lead&role=director&page=1&limit=50`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }
@@ -300,7 +302,7 @@ export default function EmployeesPage() {
           status: 'pending',
         });
         
-        const response = await fetch(`http://localhost:8000/api/onboarding/requests?${params}`, {
+        const response = await fetch(`${API_BASE_URL}/onboarding/requests?${params}`, {
           headers: { 
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}` 
@@ -313,7 +315,7 @@ export default function EmployeesPage() {
         }
       } else if (userData?.role === 'hr') {
         // HR sees all their own requests
-        const response = await fetch('http://localhost:8000/api/onboarding/requests', {
+        const response = await fetch(`${API_BASE_URL}/onboarding/requests`, {
           headers: { 
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}` 
@@ -335,7 +337,7 @@ export default function EmployeesPage() {
     try {
       const token = await user?.getIdToken();
       
-      const response = await fetch(`http://localhost:8000/api/onboarding/requests/${requestId}/approve`, {
+      const response = await fetch(`${API_BASE_URL}/onboarding/requests/${requestId}/approve`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -364,7 +366,7 @@ export default function EmployeesPage() {
     try {
       const token = await user?.getIdToken();
       
-      const response = await fetch(`http://localhost:8000/api/onboarding/requests/${requestId}/reject`, {
+      const response = await fetch(`${API_BASE_URL}/onboarding/requests/${requestId}/reject`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -407,7 +409,7 @@ export default function EmployeesPage() {
           notes: `Date of Joining: ${formData.dateOfJoining || 'Not specified'}`,
         };
         
-        const response = await fetch('http://localhost:8000/api/onboarding/requests', {
+        const response = await fetch(`${API_BASE_URL}/onboarding/requests`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -440,7 +442,7 @@ export default function EmployeesPage() {
           status: 'active'
         };
         
-        const response = await fetch('http://localhost:8000/api/users/register', {
+        const response = await fetch(`${API_BASE_URL}/users/register`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -487,7 +489,7 @@ export default function EmployeesPage() {
             phone: formData.phone,
           };
 
-      const response = await fetch(`http://localhost:8000/api/users/${editingEmployee.uid}`, {
+      const response = await fetch(`${API_BASE_URL}/users/${editingEmployee.uid}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -521,7 +523,7 @@ export default function EmployeesPage() {
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
-        `http://localhost:8000/api/users/${deactivatingEmployee.uid}`,
+        `${API_BASE_URL}/users/${deactivatingEmployee.uid}`,
         {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` },
@@ -1034,7 +1036,7 @@ export default function EmployeesPage() {
                                         try {
                                           setLoading(true);
                                           const token = await user?.getIdToken();
-                                          const response = await fetch(`http://localhost:8000/api/onboarding/requests/${request.id}`, {
+                                          const response = await fetch(`${API_BASE_URL}/onboarding/requests/${request.id}`, {
                                             method: 'DELETE',
                                             headers: {
                                               'Authorization': `Bearer ${token}`,
