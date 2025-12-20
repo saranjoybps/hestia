@@ -21,7 +21,8 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:3005",
         "http://localhost:8000",
-        "https://*.onrender.com"
+        "https://*.onrender.com",
+        "https://*.vercel.app"
     ]
     
     # Security
