@@ -73,7 +73,7 @@ interface LetterRequest {
   employeeEmail: string;
   department: string;
   designation: string;
-  letterType: 'exit' | 'experience' | 'both';
+  letterType: 'exit' | 'experience' | 'both' | 'offer';
   lastWorkingDay: string;
   reasonForExit?: string;
   additionalComments?: string;
@@ -89,6 +89,11 @@ interface LetterRequest {
   rejectedOn?: string;
   pdfUrl?: string;
   employmentPeriod?: string;
+  // Offer letter specific fields
+  annualSalary?: string;
+  startDate?: string;
+  probationPeriod?: string;
+  noticePeriod?: string;
   // Google Drive fields
   experience_letter_link?: string;
   experience_file_id?: string;
@@ -125,10 +130,15 @@ export default function ExitLettersPage() {
   // Form data
   const [formData, setFormData] = useState({
     employeeId: '',
-    letterType: 'experience' as 'exit' | 'experience' | 'both',
+    letterType: 'offer' as 'exit' | 'experience' | 'both' | 'offer',
     lastWorkingDay: format(new Date(), 'yyyy-MM-dd'),
     reasonForExit: '',
     additionalComments: '',
+    // Offer letter specific fields
+    annualSalary: '',
+    startDate: format(new Date(), 'yyyy-MM-dd'),
+    probationPeriod: 'three months',
+    noticePeriod: '45 days',
   });
 
   // Permissions
@@ -147,8 +157,8 @@ export default function ExitLettersPage() {
     try {
       const token = await user?.getIdToken();
 
-      // Fetch employees if HR (for creating requests)
-      if (isHR) {
+      // Fetch employees if HR or Director (for creating requests)
+      if (isHR || isDirector) {
         const empRes = await fetch(`${API_BASE_URL}/users?page=1&limit=50`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
@@ -224,6 +234,13 @@ export default function ExitLettersPage() {
           requestedBy: userData?.uid,
           requestedByName: userData?.name,
           joinDate: employee.created_at,
+          // Include offer letter fields if applicable
+          ...(formData.letterType === 'offer' && {
+            annualSalary: formData.annualSalary,
+            startDate: formData.startDate,
+            probationPeriod: formData.probationPeriod,
+            noticePeriod: formData.noticePeriod,
+          }),
         }),
       });
 
@@ -353,10 +370,14 @@ export default function ExitLettersPage() {
   const resetForm = () => {
     setFormData({
       employeeId: '',
-      letterType: 'experience',
+      letterType: 'offer',
       lastWorkingDay: format(new Date(), 'yyyy-MM-dd'),
       reasonForExit: '',
       additionalComments: '',
+      annualSalary: '',
+      startDate: format(new Date(), 'yyyy-MM-dd'),
+      probationPeriod: 'three months',
+      noticePeriod: '45 days',
     });
   };
 
@@ -383,6 +404,7 @@ export default function ExitLettersPage() {
       exit: 'bg-orange-100 text-orange-800',
       experience: 'bg-blue-100 text-blue-800',
       both: 'bg-purple-100 text-purple-800',
+      offer: 'bg-green-100 text-green-800',
     };
     
     return (
@@ -410,15 +432,15 @@ export default function ExitLettersPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Exit & Experience Letters</h1>
-          <p className="text-gray-600 mt-1">Manage employee exit and experience letter requests</p>
+          <h1 className="text-3xl font-bold text-gray-900">Employee Letters</h1>
+          <p className="text-gray-600 mt-1">Manage employee letter requests (Offer, Exit & Experience Letters)</p>
         </div>
         <div className="flex gap-3">
           <Button onClick={fetchData} disabled={loading} variant="outline">
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          {isHR && (
+          {(isHR || isDirector) && (
             <Button onClick={() => setShowCreateDialog(true)}>
               <Plus className="h-4 w-4 mr-2" />
               New Request
@@ -435,7 +457,7 @@ export default function ExitLettersPage() {
             <div>
               <h3 className="font-semibold text-blue-900">Module Access</h3>
               <p className="text-sm text-blue-800 mt-1">
-                <strong>HR:</strong> Create letter requests for employees • <strong>Directors:</strong> Approve/reject requests and generate PDF letters
+                <strong>HR & Directors:</strong> Create letter requests for employees • <strong>Directors:</strong> Approve/reject requests and generate PDF letters
               </p>
             </div>
           </div>
@@ -445,7 +467,7 @@ export default function ExitLettersPage() {
       {/* Tabs */}
       <Tabs defaultValue={isHR ? "requests" : "approvals"} className="space-y-4">
         <TabsList>
-          {isHR && (
+          {(isHR || isDirector) && (
             <TabsTrigger value="requests">
               <FileText className="h-4 w-4 mr-2" />
               My Requests ({requests.length})
@@ -463,8 +485,8 @@ export default function ExitLettersPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* My Requests Tab (HR) */}
-        {isHR && (
+        {/* My Requests Tab (HR & Directors) */}
+        {(isHR || isDirector) && (
           <TabsContent value="requests" className="space-y-4">
             <Card>
               <CardHeader>
@@ -777,6 +799,7 @@ export default function ExitLettersPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="offer">Offer Letter</SelectItem>
                     <SelectItem value="exit">Exit Letter</SelectItem>
                     <SelectItem value="experience">Experience Letter</SelectItem>
                     <SelectItem value="both">Both (Exit & Experience)</SelectItem>
@@ -784,27 +807,76 @@ export default function ExitLettersPage() {
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="last-working-day">Last Working Day *</Label>
-                <Input
-                  id="last-working-day"
-                  type="date"
-                  value={formData.lastWorkingDay}
-                  onChange={(e) => setFormData({ ...formData, lastWorkingDay: e.target.value })}
-                />
-              </div>
+              {formData.letterType === 'offer' ? (
+                <div className="space-y-2">
+                  <Label htmlFor="start-date">Start Date *</Label>
+                  <Input
+                    id="start-date"
+                    type="date"
+                    value={formData.startDate}
+                    onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                  />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="last-working-day">Last Working Day *</Label>
+                  <Input
+                    id="last-working-day"
+                    type="date"
+                    value={formData.lastWorkingDay}
+                    onChange={(e) => setFormData({ ...formData, lastWorkingDay: e.target.value })}
+                  />
+                </div>
+              )}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="reason">Reason for Exit (Optional)</Label>
-              <Textarea
-                id="reason"
-                placeholder="e.g., Career growth, Personal reasons, Better opportunity..."
-                value={formData.reasonForExit}
-                onChange={(e) => setFormData({ ...formData, reasonForExit: e.target.value })}
-                rows={3}
-              />
-            </div>
+            {/* Conditional fields based on letter type */}
+            {formData.letterType === 'offer' ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="annualSalary">Annual Salary (₹) *</Label>
+                  <Input
+                    id="annualSalary"
+                    type="text"
+                    placeholder="e.g., 3,84,000"
+                    value={formData.annualSalary}
+                    onChange={(e) => setFormData({ ...formData, annualSalary: e.target.value })}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="probationPeriod">Probation Period</Label>
+                    <Input
+                      id="probationPeriod"
+                      placeholder="e.g., three months"
+                      value={formData.probationPeriod}
+                      onChange={(e) => setFormData({ ...formData, probationPeriod: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="noticePeriod">Notice Period</Label>
+                    <Input
+                      id="noticePeriod"
+                      placeholder="e.g., 45 days"
+                      value={formData.noticePeriod}
+                      onChange={(e) => setFormData({ ...formData, noticePeriod: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="reason">Reason for Exit (Optional)</Label>
+                <Textarea
+                  id="reason"
+                  placeholder="e.g., Career growth, Personal reasons, Better opportunity..."
+                  value={formData.reasonForExit}
+                  onChange={(e) => setFormData({ ...formData, reasonForExit: e.target.value })}
+                  rows={3}
+                />
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="comments">Additional Comments (Optional)</Label>
@@ -832,7 +904,7 @@ export default function ExitLettersPage() {
             </Button>
             <Button 
               onClick={handleCreateRequest}
-              disabled={loading || !formData.employeeId}
+              disabled={loading || !formData.employeeId || (formData.letterType === 'offer' && !formData.annualSalary)}
             >
               {loading ? 'Submitting...' : 'Submit Request'}
             </Button>
