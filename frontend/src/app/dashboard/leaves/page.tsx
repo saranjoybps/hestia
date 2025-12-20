@@ -230,7 +230,7 @@ export default function LeavesPage() {
         return;
       }
 
-      const response = await fetch(`${API_BASE_URL}/leaves', {
+      const response = await fetch(`${API_BASE_URL}/leaves`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

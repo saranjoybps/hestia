@@ -51,45 +51,46 @@ export default function DashboardTopBar() {
   };
 
   return (
-    <header className="border-b bg-white dark:bg-gray-900 dark:border-gray-800 h-16 flex items-center justify-between px-6">
-      <div className="flex items-center gap-4">
-        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
+    <header className="border-b bg-white dark:bg-gray-900 dark:border-gray-800 h-16 flex items-center justify-between px-4 lg:px-6">
+      <div className="flex items-center gap-2 lg:gap-4 ml-12 lg:ml-0">
+        <h2 className="text-sm lg:text-xl font-semibold text-gray-800 dark:text-gray-100 truncate">
           Welcome back, {userData?.name || 'User'}
         </h2>
         {userData?.role && (
-          <Badge className={getRoleBadgeColor(userData.role)} variant="secondary">
+          <Badge className={`${getRoleBadgeColor(userData.role)} hidden sm:inline-flex`} variant="secondary">
             {userData.role.charAt(0).toUpperCase() + userData.role.slice(1)}
           </Badge>
         )}
       </div>
       
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1 lg:gap-3">
         {/* Dark Mode Toggle */}
         <Button 
           variant="ghost" 
           size="icon"
           onClick={toggleTheme}
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          className="h-8 w-8 lg:h-10 lg:w-10"
         >
           {theme === 'dark' ? (
-            <Sun className="h-5 w-5" />
+            <Sun className="h-4 w-4 lg:h-5 lg:w-5" />
           ) : (
-            <Moon className="h-5 w-5" />
+            <Moon className="h-4 w-4 lg:h-5 lg:w-5" />
           )}
         </Button>
 
         {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
+        <Button variant="ghost" size="icon" className="relative h-8 w-8 lg:h-10 lg:w-10">
+          <Bell className="h-4 w-4 lg:h-5 lg:w-5" />
           <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full" />
         </Button>
         
         {/* User Profile Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="flex items-center gap-2">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-blue-100 text-blue-600">
+            <Button variant="ghost" className="flex items-center gap-2 h-8 lg:h-10 px-2">
+              <Avatar className="h-7 w-7 lg:h-8 lg:w-8">
+                <AvatarFallback className="bg-blue-100 text-blue-600 text-xs lg:text-sm">
                   {userData?.name ? getInitials(userData.name) : 'U'}
                 </AvatarFallback>
               </Avatar>

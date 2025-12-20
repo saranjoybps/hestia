@@ -4,6 +4,10 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import {
   LayoutDashboard,
   Users,
@@ -18,6 +22,7 @@ import {
   Building2,
   Clock,
   UserPlus,
+  Menu,
 } from 'lucide-react';
 
 interface NavItem {
@@ -103,14 +108,15 @@ const navItems: NavItem[] = [
 export default function DashboardSidebar() {
   const pathname = usePathname();
   const { userData } = useAuth();
+  const [open, setOpen] = useState(false);
 
   const canAccessItem = (item: NavItem) => {
     if (!item.roles) return true;
     return userData && item.roles.includes(userData.role);
   };
 
-  return (
-    <aside className="w-[280px] border-r bg-white dark:bg-gray-900 dark:border-gray-800 h-screen sticky top-0 flex flex-col">
+  const SidebarContent = () => (
+    <>
       <div className="p-6 border-b dark:border-gray-800">
         <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">JoyHR</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">HR Management System</p>
@@ -128,6 +134,7 @@ export default function DashboardSidebar() {
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  onClick={() => setOpen(false)}
                   className={cn(
                     'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
                     isActive
@@ -150,6 +157,34 @@ export default function DashboardSidebar() {
           <p>Version 1.0.0</p>
         </div>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile Menu Button */}
+      <div className="lg:hidden fixed top-4 left-4 z-50">
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="icon" className="bg-white dark:bg-gray-900">
+              <Menu className="h-5 w-5" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-[280px] p-0 bg-white dark:bg-gray-900">
+            <VisuallyHidden>
+              <SheetTitle>Navigation Menu</SheetTitle>
+            </VisuallyHidden>
+            <div className="flex flex-col h-full">
+              <SidebarContent />
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
+
+      {/* Desktop Sidebar */}
+      <aside className="hidden lg:flex w-[280px] border-r bg-white dark:bg-gray-900 dark:border-gray-800 h-screen sticky top-0 flex-col">
+        <SidebarContent />
+      </aside>
+    </>
   );
 }

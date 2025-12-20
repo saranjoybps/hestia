@@ -177,7 +177,7 @@ export default function AnnouncementsPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      const response = await fetch(`${API_BASE_URL}/announcements', {
+      const response = await fetch(`${API_BASE_URL}/announcements`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
