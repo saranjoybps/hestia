@@ -25,13 +25,18 @@ class LetterRequest(BaseModel):
     employeeEmail: str
     department: str
     designation: str
-    letterType: str  # 'exit', 'experience', 'both'
+    letterType: str  # 'exit', 'experience', 'both', 'offer'
     lastWorkingDay: str
     reasonForExit: Optional[str] = None
     additionalComments: Optional[str] = None
     requestedBy: str
     requestedByName: str
     joinDate: Optional[str] = None
+    # Offer letter specific fields
+    annualSalary: Optional[str] = None
+    startDate: Optional[str] = None
+    probationPeriod: Optional[str] = None
+    noticePeriod: Optional[str] = None
 
 class ApprovalRequest(BaseModel):
     approvedBy: str
@@ -130,17 +135,95 @@ def generate_letter_pdf(letter_data: dict, letter_type: str) -> BytesIO:
     # Date and Reference
     current_date = datetime.now().strftime("%B %d, %Y")
     story.append(Paragraph(f"Date: {current_date}", right_style))
-    story.append(Paragraph(f"Ref: JOYRTS/HR/{datetime.now().strftime('%Y%m%d')}/{letter_data['employeeId']}", right_style))
+    
+    ref_number = letter_data.get('referenceNumber', f"JOYRTS/HR/{datetime.now().strftime('%Y%m%d')}/{letter_data['employeeId']}")
+    story.append(Paragraph(f"Ref: {ref_number}", right_style))
     story.append(Spacer(1, 0.3*inch))
     
-    # Letter Title
-    if letter_type == 'experience':
+    # Letter Title and Content based on type
+    if letter_type == 'offer':
+        # Offer Letter
+        letter_title = "OFFER OF EMPLOYMENT"
+        story.append(Paragraph(letter_title, heading_style))
+        story.append(Spacer(1, 0.2*inch))
+        
+        story.append(Paragraph(f"{letter_data['employeeName']},", normal_style))
+        story.append(Spacer(1, 0.1*inch))
+        
+        story.append(Paragraph("Congratulations!", normal_style))
+        story.append(Spacer(1, 0.1*inch))
+        
+        start_date_formatted = datetime.fromisoformat(letter_data['startDate'].replace('Z', '+00:00')).strftime('%B %d, %Y')
+        intro = f"""
+        We are pleased to appoint you as <b>{letter_data['designation']}</b>, with effect from <b>{start_date_formatted}</b>, on the following terms and conditions:
+        """
+        story.append(Paragraph(intro, normal_style))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Terms and conditions
+        probation = letter_data.get('probationPeriod', 'three months')
+        notice = letter_data.get('noticePeriod', '45 days')
+        
+        terms = [
+            f"1. You will be on probation for a period of <b>{probation}</b> from <b>{start_date_formatted}</b> and shall be confirmed after the said period subject to your meeting our performance standards.",
+            f"2. Your total emoluments per annum including shift allowance and other related allowances would be <b>₹{letter_data['annualSalary']}</b>.",
+            "3. Your salary is strictly confidential and we expect that you maintain the confidentiality of the same. We reiterate that your pay scale is a confidential matter between you and the Company and we reaffirm that the Company shall view any breach of confidentiality with utmost seriousness.",
+            "4. You shall be responsible for all the activities related to responsibilities assigned to you and shall achieve all the targets set for you periodically.",
+            "5. Your continuation in the organization shall be based purely on your performance and adhering to the organization's policies and procedures. You shall maintain proper discipline and dignity of your office and shall deal with all matters with sobriety.",
+            "6. You will not engage in any other business or service or any other occupation either professional or honorary, or part time, during your period of employment with us.",
+            "7. You will be representing the organization purely in connection with soliciting business from potential clients and will not indulge in any activity that would be harmful to the interests of the organization.",
+            "8. You will not be eligible for any leave during the probation period else it consider as LOP.",
+            "9. Should you remain absent from work, without reasonable explanation, for more than seven (7) consecutive days, it will be presumed that you are no longer interested in working and have abandoned its services, thereby terminating your contract of service. In such case, you will be required to return any company asset or property that you have been provided with at the time of your employment.",
+            "10. During the employment period JOY RESEARCH AND TECHNOLOGY SERVICES PRIVATE LIMITED as an employer is at will to end the employment relationship at any time, with or without notice or cause for unsatisfactory performance.",
+            f"11. The notice period after probation will be <b>{notice}</b> notice on the employee's side. You are not allowed to take leaves during notice period, if availed leave the notice period will be extended.",
+            "12. You will be provided with complete training and stationary support from the organization as and when required.",
+            "13. During the period of this appointment, you will not secure any other post without the previous consent of the management in writing.",
+            "14. Your appointment will be subject to the verification of your service record and identification.",
+            "15. You will observe working timings and holidays as applicable to customer's location and customer's place of work.",
+            "16. You will forthwith inform the concern person in the organization of any change in your residential address.",
+            "17. As a condition of your employment, you will be required to agree to Non-Compete with the Company. The purpose of this non-compete agreement is to protect the Company's legitimate business interests, including but not limited to its confidential information, trade secrets, client relationships, and intellectual property.",
+        ]
+        
+        for term in terms:
+            story.append(Paragraph(term, normal_style))
+            story.append(Spacer(1, 0.15*inch))
+        
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Code of Conduct
+        story.append(Paragraph("<b>Code of Conduct:</b>", normal_style))
+        story.append(Spacer(1, 0.1*inch))
+        story.append(Paragraph("The work rules and code of conduct are very important, and the Company regards them seriously. All Employees are expected to follow these rules and maintain proper discipline, punctuality, ethical conduct, and professionalism at all times.", normal_style))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Closing
+        story.append(Paragraph("You are requested to sign the duplicate and provide us the same in acceptance of the above offer.", normal_style))
+        story.append(Spacer(1, 0.2*inch))
+        story.append(Paragraph("Wishing you the very best and looking forward to a mutually beneficial relationship.", normal_style))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Signature section
+        story.append(Paragraph("For JOY RESEARCH AND TECHNOLOGY SERVICES PRIVATE LIMITED,", normal_style))
+        story.append(Spacer(1, 0.5*inch))
+        story.append(Paragraph(f"<b>{letter_data['approverName']}</b>", normal_style))
+        story.append(Paragraph("Director", normal_style))
+        story.append(Spacer(1, 0.5*inch))
+        
+        # Declaration section
+        story.append(Paragraph("<b>Declaration:</b>", normal_style))
+        story.append(Paragraph("I have read and understood the terms and conditions stated above and hereby signify my acceptance of the same.", normal_style))
+        story.append(Spacer(1, 0.5*inch))
+        story.append(Paragraph("_______________________", normal_style))
+        story.append(Paragraph("Employee's Signature", normal_style))
+        
+    elif letter_type == 'experience':
         letter_title = "EXPERIENCE CERTIFICATE"
+        story.append(Paragraph(letter_title, heading_style))
+        story.append(Spacer(1, 0.2*inch))
     else:
         letter_title = "EXIT LETTER"
-    
-    story.append(Paragraph(letter_title, heading_style))
-    story.append(Spacer(1, 0.2*inch))
+        story.append(Paragraph(letter_title, heading_style))
+        story.append(Spacer(1, 0.2*inch))
     
     # Letter Body
     if letter_type == 'experience':
@@ -202,16 +285,19 @@ def generate_letter_pdf(letter_data: dict, letter_type: str) -> BytesIO:
             """
             story.append(Paragraph(reason_content, normal_style))
     
-    story.append(Spacer(1, 0.3*inch))
+    # Only add closing signature for non-offer letters (offer has its own signature section)
+    if letter_type != 'offer':
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Closing
+        story.append(Paragraph("Sincerely,", normal_style))
+        story.append(Spacer(1, 0.5*inch))
+        
+        # Signature section
+        story.append(Paragraph(f"<b>{letter_data['approverName']}</b>", normal_style))
+        story.append(Paragraph("Director", normal_style))
+        story.append(Paragraph("Joyrts", normal_style))
     
-    # Closing
-    story.append(Paragraph("Sincerely,", normal_style))
-    story.append(Spacer(1, 0.5*inch))
-    
-    # Signature section
-    story.append(Paragraph(f"<b>{letter_data['approverName']}</b>", normal_style))
-    story.append(Paragraph("Director", normal_style))
-    story.append(Paragraph("Joyrts", normal_style))
     story.append(Spacer(1, 0.3*inch))
     
     # Footer
@@ -238,9 +324,9 @@ def generate_letter_pdf(letter_data: dict, letter_type: str) -> BytesIO:
 @router.post("/letters/request")
 async def create_letter_request(
     request: LetterRequest,
-    current_user: dict = Depends(require_role("hr"))
+    current_user: dict = Depends(require_role("hr", "director"))
 ):
-    """Create a new letter request (HR only)"""
+    """Create a new letter request (HR and Directors can create)"""
     try:
         # Calculate employment period
         employment_period = ""
@@ -268,6 +354,15 @@ async def create_letter_request(
             "employmentPeriod": employment_period,
             "joinDate": request.joinDate,
         }
+        
+        # Add offer letter specific fields
+        if request.letterType == 'offer':
+            letter_data.update({
+                "annualSalary": request.annualSalary,
+                "startDate": request.startDate,
+                "probationPeriod": request.probationPeriod or "three months",
+                "noticePeriod": request.noticePeriod or "45 days",
+            })
         
         # Add to Firestore
         doc_ref = db.collection('letter_requests').add(letter_data)
