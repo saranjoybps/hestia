@@ -389,35 +389,33 @@ async def create_letter_request(
                 exit_pdf = generate_letter_pdf(letter_data, 'exit')
                 
                 # Upload to Google Drive
-                exp_file = drive_service.upload_file(
-                    f"{request.employeeName.replace(' ', '_')}_experience_certificate.pdf",
+                exp_file = drive_service.upload_pdf(
                     exp_pdf,
-                    'application/pdf'
+                    f"{request.employeeName.replace(' ', '_')}_experience_certificate.pdf"
                 )
-                exit_file = drive_service.upload_file(
-                    f"{request.employeeName.replace(' ', '_')}_exit_letter.pdf",
+                exit_file = drive_service.upload_pdf(
                     exit_pdf,
-                    'application/pdf'
+                    f"{request.employeeName.replace(' ', '_')}_exit_letter.pdf"
                 )
                 
                 # Update request with file info
                 db.collection('letter_requests').document(letter_id).update({
-                    'experience_letter_link': exp_file['webViewLink'],
-                    'experience_file_id': exp_file['id'],
-                    'exit_letter_link': exit_file['webViewLink'],
-                    'exit_file_id': exit_file['id'],
+                    'experience_letter_link': exp_file['web_view_link'],
+                    'experience_file_id': exp_file['file_id'],
+                    'exit_letter_link': exit_file['web_view_link'],
+                    'exit_file_id': exit_file['file_id'],
                     'pdfFiles': [
                         {
                             'type': 'experience',
-                            'filename': exp_file['name'],
-                            'file_id': exp_file['id'],
-                            'web_view_link': exp_file['webViewLink']
+                            'filename': f"{request.employeeName.replace(' ', '_')}_experience_certificate.pdf",
+                            'file_id': exp_file['file_id'],
+                            'web_view_link': exp_file['web_view_link']
                         },
                         {
                             'type': 'exit',
-                            'filename': exit_file['name'],
-                            'file_id': exit_file['id'],
-                            'web_view_link': exit_file['webViewLink']
+                            'filename': f"{request.employeeName.replace(' ', '_')}_exit_letter.pdf",
+                            'file_id': exit_file['file_id'],
+                            'web_view_link': exit_file['web_view_link']
                         }
                     ]
                 })
@@ -429,17 +427,17 @@ async def create_letter_request(
                 filename = f"{request.employeeName.replace(' ', '_')}_{letter_type_name}.pdf"
                 
                 # Upload to Google Drive
-                file_info = drive_service.upload_file(filename, pdf_buffer, 'application/pdf')
+                file_info = drive_service.upload_pdf(pdf_buffer, filename)
                 
                 # Update request with file info
                 db.collection('letter_requests').document(letter_id).update({
-                    f'{request.letterType}_letter_link': file_info['webViewLink'],
-                    f'{request.letterType}_file_id': file_info['id'],
+                    f'{request.letterType}_letter_link': file_info['web_view_link'],
+                    f'{request.letterType}_file_id': file_info['file_id'],
                     'pdfFiles': [{
                         'type': request.letterType,
-                        'filename': file_info['name'],
-                        'file_id': file_info['id'],
-                        'web_view_link': file_info['webViewLink']
+                        'filename': filename,
+                        'file_id': file_info['file_id'],
+                        'web_view_link': file_info['web_view_link']
                     }]
                 })
         
