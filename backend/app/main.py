@@ -31,14 +31,15 @@ def is_allowed_origin(origin: str) -> bool:
     # Pattern matches
     patterns = [
         r'^https://.*\.vercel\.app$',
-        r'^https://.*\.onrender\.com$'
+        r'^https://.*\.onrender\.com$',
+        r'^https://hr\.joyrts\.com$'
     ]
     return any(re.match(pattern, origin) for pattern in patterns)
 
 # Configure CORS with regex support
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"(http://localhost:\d+|https://.*\.vercel\.app|https://.*\.onrender\.com)",
+    allow_origin_regex=r"(http://localhost:\d+|https://.*\.vercel\.app|https://.*\.onrender\.com|https://hr\.joyrts\.com)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
