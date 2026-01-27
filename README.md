@@ -63,4 +63,4 @@ uvicorn app.main:app --reload  # http://localhost:8000
 
 ## 📄 License
 
-Proprietary - © 2025 Joyrts
+Proprietary - © 2026 Joyrts
