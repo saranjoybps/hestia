@@ -11,10 +11,5 @@
       "src": "/(.*)",
       "dest": "app/main.py"
     }
-  ],
-  "env": {
-    "FIREBASE_CREDENTIALS": "@FIREBASE_CREDENTIALS",
-    "JWT_SECRET_KEY": "@JWT_SECRET_KEY",
-    "ENVIRONMENT": "production"
-  }
+  ]
 }
