@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+import os
 
 
 class Settings(BaseSettings):
@@ -7,6 +8,7 @@ class Settings(BaseSettings):
     
     # Firebase
     firebase_credentials_path: str = "./firebase-credentials.json"
+    firebase_credentials: str | None = None  # For Vercel/production deployment
     
     # API Settings
     api_title: str = "JoyHR API"
