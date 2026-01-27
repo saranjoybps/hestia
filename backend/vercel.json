@@ -13,8 +13,8 @@
     }
   ],
   "env": {
-    "FIREBASE_CREDENTIALS": "@firebase_credentials",
-    "JWT_SECRET_KEY": "@jwt_secret_key",
+    "FIREBASE_CREDENTIALS": "@FIREBASE_CREDENTIALS",
+    "JWT_SECRET_KEY": "@JWT_SECRET_KEY",
     "ENVIRONMENT": "production"
   }
 }
