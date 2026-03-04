@@ -1,0 +1,25 @@
+# General
+backend/
+.DS_Store
+.env
+.env.local
+.env.*.local
+*.log
+
+# Sensitive Data
+EMPLOYEE_CREDENTIALS.md
+Employee_Details.csv
+
+# Firebase
+firebase-credentials.json
+serviceAccountKey.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
