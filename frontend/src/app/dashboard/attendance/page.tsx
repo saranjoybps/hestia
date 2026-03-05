@@ -54,6 +54,31 @@ import {
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, isSameDay } from 'date-fns';
 
+// convert between frontend display statuses and API expected values
+const toApiStatus = (status: AttendanceRecord['status']): string => {
+  switch (status) {
+    case 'half-day':
+      return 'half_day';
+    case 'on-leave':
+    case 'week-off':
+    case 'comp-off':
+      return 'leave';
+    default:
+      return status;
+  }
+};
+
+const fromApiStatus = (status: string): AttendanceRecord['status'] => {
+  switch (status) {
+    case 'half_day':
+      return 'half-day';
+    case 'leave':
+      return 'on-leave'; // default mapping for any leave-type
+    default:
+      return status as AttendanceRecord['status'];
+  }
+};
+
 interface AttendanceRecord {
   id: string;
   userId: string;
@@ -137,7 +162,7 @@ export default function AttendancePage() {
     if (user) {
       fetchAttendanceRecords();
     }
-  }, [user, selectedEmployee, filterStartDate, filterEndDate]);
+  }, [user, selectedEmployee, filterStartDate, filterEndDate, teamMembers]);
 
   const fetchTeamMembers = async () => {
     try {
@@ -168,8 +193,21 @@ export default function AttendancePage() {
       );
 
       if (response.ok) {
-        const data = await response.json();
-        setAttendanceRecords(data);
+        const data: AttendanceRecord[] = await response.json();
+
+        // ensure each record has a userName
+        const selectedEmployeeName =
+          selectedEmployee === 'me'
+            ? userData?.name || 'Me'
+            : teamMembers.find((m) => m.uid === selectedEmployee)?.name || '';
+
+        const normalized = data.map((r) => ({
+          ...r,
+          status: fromApiStatus(r.status),
+          userName: r.userName || selectedEmployeeName,
+        }));
+
+        setAttendanceRecords(normalized);
       }
     } catch (error) {
       console.error('Error fetching attendance:', error);
@@ -218,6 +256,23 @@ export default function AttendancePage() {
   };
 
   const handleMarkAttendance = async () => {
+    // ensure every member has a shift (unless it's a weekend)
+    const dateObj = new Date(markAttendanceData.date);
+    const invalidMembers = teamMembers.filter(m => {
+      const shift = teamShifts[m.uid];
+      const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+      return !shift && !isWeekend;
+    });
+
+    if (invalidMembers.length > 0) {
+      toast.error(
+        `Cannot submit: no shift assigned for ${invalidMembers
+          .map(m => m.name)
+          .join(', ')}`
+      );
+      return;
+    }
+
     setLoading(true);
     try {
       const token = await user?.getIdToken();
@@ -233,7 +288,7 @@ export default function AttendancePage() {
           body: JSON.stringify({
             user_id: userId,
             date: markAttendanceData.date,
-            status: status,
+            status: toApiStatus(status),
             marked_by: userData?.uid,
             check_in: status === 'present' || status === 'half-day' ? '09:00' : '',
             check_out: status === 'present' || status === 'half-day' ? '18:00' : '',
@@ -277,9 +332,10 @@ export default function AttendancePage() {
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
+          // include existing values so server validations continue to pass
           checkIn: editingRecord.checkIn,
           checkOut: editingRecord.checkOut,
-          status: editingRecord.status,
+          status: toApiStatus(editingRecord.status),
           notes: editingRecord.notes,
           correctedBy: userData?.uid,
         }),
@@ -323,13 +379,10 @@ export default function AttendancePage() {
 
   const exportAttendanceReport = () => {
     const csvContent = [
-      ['Date', 'Employee', 'Check In', 'Check Out', 'Work Hours', 'Status', 'Notes'],
+      ['Date', 'Employee', 'Status', 'Notes'],
       ...attendanceRecords.map(r => [
         r.date,
-        r.userName,
-        r.checkIn || '-',
-        r.checkOut || '-',
-        r.workHours?.toFixed(2) || '0',
+        r.userName || selectedEmployeeName,
         r.status,
         r.notes || '-'
       ])
@@ -376,7 +429,12 @@ export default function AttendancePage() {
 
     switch (record.status) {
       case 'present':
-        return record.workHours >= 8 ? '#22c55e' : '#eab308'; // Green for 8+ hrs, Yellow for <8 hrs
+        // Treat present as green by default. If workHours is defined and explicitly
+        // less than 8, use yellow; otherwise assume a full day.
+        if (record.workHours != null && record.workHours < 8) {
+          return '#eab308'; // Yellow for short days
+        }
+        return '#22c55e'; // Green for full present days
       case 'half-day':
         return '#eab308'; // Yellow
       case 'absent':
@@ -421,6 +479,12 @@ export default function AttendancePage() {
   };
 
   const stats = calculateStats();
+
+  // compute display name for currently selected employee (used when records lack userName)
+  const selectedEmployeeName =
+    selectedEmployee === 'me'
+      ? userData?.name || 'Me'
+      : teamMembers.find((m) => m.uid === selectedEmployee)?.name || '';
 
   return (
     <div className="space-y-6">
@@ -467,7 +531,7 @@ export default function AttendancePage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="me">My Attendance</SelectItem>
+                  <SelectItem value="me">{userData?.name || 'My Attendance'}</SelectItem>
                   <Separator className="my-2" />
                   {teamMembers.map(member => (
                     <SelectItem key={member.uid} value={member.uid}>
@@ -581,10 +645,7 @@ export default function AttendancePage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Date</TableHead>
-                        {canMarkAttendance && <TableHead>Employee</TableHead>}
-                        <TableHead>Check In</TableHead>
-                        <TableHead>Check Out</TableHead>
-                        <TableHead>Work Hours</TableHead>
+                        <TableHead>Employee</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Notes</TableHead>
                         {canEditAttendance && <TableHead>Actions</TableHead>}
@@ -596,10 +657,7 @@ export default function AttendancePage() {
                           <TableCell className="font-medium">
                             {format(new Date(record.date), 'MMM dd, yyyy')}
                           </TableCell>
-                          {canMarkAttendance && <TableCell>{record.userName}</TableCell>}
-                          <TableCell>{record.checkIn || '-'}</TableCell>
-                          <TableCell>{record.checkOut || '-'}</TableCell>
-                          <TableCell>{record.workHours ? `${record.workHours.toFixed(2)} hrs` : '-'}</TableCell>
+                          <TableCell>{record.userName || '-'}</TableCell>
                           <TableCell>
                             <Badge className={getStatusBadge(record.status)}>
                               <span className="flex items-center gap-1">
@@ -829,7 +887,8 @@ export default function AttendancePage() {
                               Weekend
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="text-xs bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400">
+                            <Badge variant="outline" className="text-xs bg-red-50 dark:bg-red-900 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800">
+                              <AlertCircle className="h-3 w-3 mr-1" />
                               No Shift Assigned
                             </Badge>
                           )}
@@ -845,6 +904,7 @@ export default function AttendancePage() {
                               [member.uid]: value as AttendanceRecord['status']
                             });
                           }}
+                          disabled={!shift && !isWeekend}
                         >
                           <SelectTrigger>
                             <SelectValue />
@@ -859,6 +919,9 @@ export default function AttendancePage() {
                             <SelectItem value="holiday">Holiday</SelectItem>
                           </SelectContent>
                         </Select>
+                        {(!shift && !isWeekend) && (
+                          <p className="text-xs text-red-600 mt-1">Cannot mark – no shift</p>
+                        )}
                       </div>
                     </div>
                   );
@@ -902,58 +965,25 @@ export default function AttendancePage() {
                 <p className="text-sm text-gray-600">{format(new Date(editingRecord.date), 'MMMM dd, yyyy')}</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-check-in">Check In Time</Label>
-                  <Input
-                    id="edit-check-in"
-                    type="time"
-                    value={editingRecord.checkIn || ''}
-                    onChange={(e) => setEditingRecord({ ...editingRecord, checkIn: e.target.value })}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="edit-check-out">Check Out Time</Label>
-                  <Input
-                    id="edit-check-out"
-                    type="time"
-                    value={editingRecord.checkOut || ''}
-                    onChange={(e) => setEditingRecord({ ...editingRecord, checkOut: e.target.value })}
-                  />
-                </div>
-
-                <div className="space-y-2 col-span-2">
-                  <Label htmlFor="edit-status">Status</Label>
-                  <Select
-                    value={editingRecord.status}
-                    onValueChange={(value: any) => setEditingRecord({ ...editingRecord, status: value })}
-                  >
-                    <SelectTrigger id="edit-status">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="present">Present</SelectItem>
-                      <SelectItem value="absent">Absent</SelectItem>
-                      <SelectItem value="half-day">Half Day</SelectItem>
-                      <SelectItem value="on-leave">On Leave</SelectItem>
-                      <SelectItem value="week-off">Week Off</SelectItem>
-                      <SelectItem value="comp-off">Comp Off</SelectItem>
-                      <SelectItem value="holiday">Holiday</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2 col-span-2">
-                  <Label htmlFor="edit-notes">Notes</Label>
-                  <Textarea
-                    id="edit-notes"
-                    placeholder="Add correction notes..."
-                    value={editingRecord.notes}
-                    onChange={(e) => setEditingRecord({ ...editingRecord, notes: e.target.value })}
-                    rows={3}
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-status">Status</Label>
+                <Select
+                  value={editingRecord.status}
+                  onValueChange={(value: any) => setEditingRecord({ ...editingRecord, status: value })}
+                >
+                  <SelectTrigger id="edit-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="present">Present</SelectItem>
+                    <SelectItem value="absent">Absent</SelectItem>
+                    <SelectItem value="half-day">Half Day</SelectItem>
+                    <SelectItem value="on-leave">On Leave</SelectItem>
+                    <SelectItem value="week-off">Week Off</SelectItem>
+                    <SelectItem value="comp-off">Comp Off</SelectItem>
+                    <SelectItem value="holiday">Holiday</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           )}

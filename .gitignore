@@ -1,5 +1,4 @@
 # General
-backend/
 .DS_Store
 .env
 .env.local

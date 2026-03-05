@@ -440,7 +440,7 @@ export default function LeavesPage() {
             <CardDescription>Available leave days for current year</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="p-4 bg-blue-50 rounded-lg">
                 <p className="text-sm text-gray-600">Casual Leave</p>
                 <p className="text-3xl font-bold text-blue-600">{leaveBalance.casual}</p>
@@ -454,11 +454,6 @@ export default function LeavesPage() {
               <div className="p-4 bg-purple-50 rounded-lg">
                 <p className="text-sm text-gray-600">Annual Leave</p>
                 <p className="text-3xl font-bold text-purple-600">{leaveBalance.annual}</p>
-                <p className="text-xs text-gray-500 mt-1">days remaining</p>
-              </div>
-              <div className="p-4 bg-orange-50 rounded-lg">
-                <p className="text-sm text-gray-600">Comp Off</p>
-                <p className="text-3xl font-bold text-orange-600">{leaveBalance.compOff}</p>
                 <p className="text-xs text-gray-500 mt-1">days remaining</p>
               </div>
             </div>
@@ -533,6 +528,7 @@ export default function LeavesPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead>Employee</TableHead>
                         <TableHead>Leave Type</TableHead>
                         <TableHead>Start Date</TableHead>
                         <TableHead>End Date</TableHead>
@@ -545,6 +541,9 @@ export default function LeavesPage() {
                     <TableBody>
                       {leaveRequests.map((leave) => (
                         <TableRow key={leave.id}>
+                          <TableCell className="font-medium">
+                            {leave.userName || userData?.name || 'You'}
+                          </TableCell>
                           <TableCell className="font-medium">
                             {getLeaveTypeLabel(leave.leaveType)}
                           </TableCell>

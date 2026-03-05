@@ -101,7 +101,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const hasRole = (...roles: string[]) => {
     if (!userData) return false;
-    return roles.includes(userData.role);
+    const role = userData.role.toLowerCase();
+    return roles.some(r => r.toLowerCase() === role);
   };
 
   const value: AuthContextType = {

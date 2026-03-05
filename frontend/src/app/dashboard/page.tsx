@@ -115,19 +115,32 @@ export default function DashboardPage() {
 
       // Calculate stats
       const totalEmployees = usersData.total || usersData.users?.length || 0;
-      const todayAttendance = Array.isArray(attendanceData) ? attendanceData : [];
-      const presentCount = todayAttendance.filter((a: any) =>
-        a.status === 'present' || a.status === 'half-day'
+
+      // attendanceData can be array directly; statuses come back as 'present','half_day',etc.
+      const attendanceArray: any[] = Array.isArray(attendanceData)
+        ? attendanceData
+        : Array.isArray(attendanceData.attendance)
+          ? attendanceData.attendance
+          : [];
+
+      const presentCount = attendanceArray.filter((a: any) =>
+        a.status === 'present' || a.status === 'half-day' || a.status === 'half_day'
       ).length;
+
       const attendancePercentage = totalEmployees > 0
         ? (presentCount / totalEmployees) * 100
         : 0;
+
+      // pending leaves count: leavesData usually returns an array (list_leaves)
+      const pendingLeavesCount = Array.isArray(leavesData)
+        ? leavesData.length
+        : leavesData.total || leavesData.leaves?.length || 0;
 
       setStats({
         totalEmployees,
         presentToday: presentCount,
         attendancePercentage,
-        pendingLeaves: leavesData.total || leavesData.leaves?.length || 0,
+        pendingLeaves: pendingLeavesCount,
         totalDepartments: departmentsData.departments?.length || 0,
       });
 

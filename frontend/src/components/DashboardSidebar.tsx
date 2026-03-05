@@ -86,12 +86,6 @@ const navItems: NavItem[] = [
     icon: Megaphone,
   },
   {
-    title: 'Employee Directory',
-    href: '/employees',
-    icon: Users,
-    roles: ['director', 'hr'],
-  },
-  {
     title: 'Organization',
     href: '/organization',
     icon: Building2,
