@@ -148,7 +148,7 @@ export default function DashboardSidebar() {
       <div className="p-4 border-t dark:border-gray-800">
         <div className="text-xs text-gray-500 dark:text-gray-400">
           <p>© 2025 Joyrts</p>
-          <p>Version 1.0.0</p>
+          <p>Version 1.0.1</p>
         </div>
       </div>
     </>

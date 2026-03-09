@@ -106,7 +106,7 @@ export default function LeavesPage() {
 
   // Form data
   const [formData, setFormData] = useState({
-    leaveType: 'casual' as LeaveRequest['leaveType'],
+    leaveType: 'sick' as LeaveRequest['leaveType'],
     startDate: '',
     endDate: '',
     reason: '',
@@ -441,20 +441,20 @@ export default function LeavesPage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div className="p-4 bg-blue-50 rounded-lg">
+              <div className="p-4 bg-gray-50 rounded-lg opacity-60">
                 <p className="text-sm text-gray-600">Casual Leave</p>
-                <p className="text-3xl font-bold text-blue-600">{leaveBalance.casual}</p>
-                <p className="text-xs text-gray-500 mt-1">days remaining</p>
+                <p className="text-3xl font-bold text-gray-400">{leaveBalance.casual}</p>
+                <p className="text-xs text-gray-500 mt-1">not allocated</p>
               </div>
-              <div className="p-4 bg-green-50 rounded-lg">
-                <p className="text-sm text-gray-600">Sick Leave</p>
+              <div className="p-4 bg-green-50 rounded-lg border-2 border-green-300">
+                <p className="text-sm text-gray-600 font-semibold">Sick Leave</p>
                 <p className="text-3xl font-bold text-green-600">{leaveBalance.sick}</p>
                 <p className="text-xs text-gray-500 mt-1">days remaining</p>
               </div>
-              <div className="p-4 bg-purple-50 rounded-lg">
+              <div className="p-4 bg-gray-50 rounded-lg opacity-60">
                 <p className="text-sm text-gray-600">Annual Leave</p>
-                <p className="text-3xl font-bold text-purple-600">{leaveBalance.annual}</p>
-                <p className="text-xs text-gray-500 mt-1">days remaining</p>
+                <p className="text-3xl font-bold text-gray-400">{leaveBalance.annual}</p>
+                <p className="text-xs text-gray-500 mt-1">not allocated</p>
               </div>
             </div>
             <Separator className="my-4" />
@@ -815,15 +815,16 @@ export default function LeavesPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="casual">Casual Leave</SelectItem>
-                  <SelectItem value="sick">Sick Leave</SelectItem>
-                  <SelectItem value="annual">Annual Leave</SelectItem>
+                  <SelectItem value="sick">Sick Leave (5 days)</SelectItem>
                   <SelectItem value="comp-off">Compensatory Off</SelectItem>
                   <SelectItem value="unpaid">Unpaid Leave</SelectItem>
                   <SelectItem value="maternity">Maternity Leave</SelectItem>
                   <SelectItem value="paternity">Paternity Leave</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-gray-500 mt-1">
+                Only Sick Leave, Compensatory Off, and other special leaves are available
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">

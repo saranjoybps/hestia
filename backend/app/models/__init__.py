@@ -12,6 +12,7 @@ class UserBase(BaseModel):
     role: Literal["employee", "lead", "manager", "hr", "director"] = "employee"
     department: Optional[str] = None
     designation: Optional[str] = None
+    dateOfJoining: Optional[str] = None
     manager_id: Optional[str] = None
     lead_id: Optional[str] = None
     status: Literal["active", "inactive"] = "active"
@@ -29,6 +30,7 @@ class UserUpdate(BaseModel):
     role: Optional[Literal["employee", "lead", "manager", "hr", "director"]] = None
     department: Optional[str] = None
     designation: Optional[str] = None
+    dateOfJoining: Optional[str] = None
     manager_id: Optional[str] = None
     lead_id: Optional[str] = None
     status: Optional[Literal["active", "inactive"]] = None

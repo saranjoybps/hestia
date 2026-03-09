@@ -75,6 +75,7 @@ export default function ProfilePage() {
 
       if (profileData.name) payload.name = profileData.name;
       if (profileData.phone) payload.phone = profileData.phone;
+      if (profileData.dateOfJoining) payload.dateOfJoining = profileData.dateOfJoining;
 
       // only send these if admin (optional safety)
       if (userData?.role === 'hr' || userData?.role === 'director') {
@@ -295,8 +296,7 @@ export default function ProfilePage() {
                       id="dateOfJoining"
                       type="date"
                       value={profileData.dateOfJoining}
-                      disabled
-                      className="bg-gray-50"
+                      onChange={(e) => setProfileData({ ...profileData, dateOfJoining: e.target.value })}
                     />
                   </div>
                 </div>
