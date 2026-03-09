@@ -26,6 +26,19 @@ async def create_leave_request(
     Create a new leave request
     """
     try:
+        # Validate leave type allocation
+        leave_type = leave_data.leaveType
+        if leave_type == "casual":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Casual leaves are not allocated. Only Sick leaves are available."
+            )
+        elif leave_type == "annual":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Annual leaves are not allocated. Only Sick leaves are available."
+            )
+        
         # Get user details
         user_ref = db.collection("users").document(leave_data.userId)
         user_doc = user_ref.get()
@@ -221,16 +234,15 @@ async def get_leave_balance(
         
         # Get current year leaves
         current_year = datetime.utcnow().year
-        query = db.collection("leaves")\
-            .where("userId", "==", user_id)\
-            .where("status", "==", "approved")
+        # Fetch all leaves for this user (approved and pending)
+        all_leaves_query = db.collection("leaves").where("userId", "==", user_id)
         
         # Default leave allocations
         total_allocations = {
-            "casual": 12,
-            "sick": 10,
-            "annual": 15,
-            "compOff": 5,
+            "casual": 0,
+            "sick": 5,
+            "annual": 0,
+            "compOff": 0,
         }
         
         used_days = {
@@ -240,22 +252,38 @@ async def get_leave_balance(
             "compOff": 0,
         }
         
+        approved_used_days = {
+            "casual": 0,
+            "sick": 0,
+            "annual": 0,
+            "compOff": 0,
+        }
+        
         total_used = 0
         
-        for doc in query.stream():
+        for doc in all_leaves_query.stream():
             leave_data = doc.to_dict()
             # Check if leave is in current year
             start_date = datetime.fromisoformat(leave_data["startDate"].replace('Z', '+00:00'))
             if start_date.year == current_year:
                 leave_type = leave_data["leaveType"]
                 days = leave_data["totalDays"]
-                total_used += days
+                status = leave_data.get("status")
                 
-                # Map frontend leave types to balance keys
-                if leave_type == "comp-off":
-                    used_days["compOff"] += days
-                elif leave_type in used_days:
-                    used_days[leave_type] += days
+                # Count approved leaves for totalUsed
+                if status == "approved":
+                    total_used += days
+                    if leave_type == "comp-off":
+                        approved_used_days["compOff"] += days
+                    elif leave_type in approved_used_days:
+                        approved_used_days[leave_type] += days
+                
+                # Count both approved and pending for available balance
+                if status in ["approved", "pending"]:
+                    if leave_type == "comp-off":
+                        used_days["compOff"] += days
+                    elif leave_type in used_days:
+                        used_days[leave_type] += days
         
         # Calculate remaining
         casual = max(0, total_allocations["casual"] - used_days["casual"])

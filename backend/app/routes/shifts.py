@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, Literal
 from datetime import datetime
 from app.dependencies import get_current_user, require_role
+from app.dependencies import db
 from app.models import ShiftCreate, ShiftUpdate, ShiftResponse
 from google.cloud.firestore_v1 import FieldFilter
 
@@ -80,8 +81,6 @@ async def create_shift(
         return ShiftResponse(
             id=shift_ref.id,
             **shift_data,
-            created_at=datetime.fromisoformat(shift_data["created_at"]),
-            updated_at=datetime.fromisoformat(shift_data["updated_at"])
         )
         
     except HTTPException:

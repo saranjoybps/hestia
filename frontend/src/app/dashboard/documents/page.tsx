@@ -109,7 +109,7 @@ interface LetterRequest {
 }
 
 export default function ExitLettersPage() {
-  const { userData, user } = useAuth();
+  const { userData, user, hasRole } = useAuth();
   const [loading, setLoading] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [requests, setRequests] = useState<LetterRequest[]>([]);
@@ -142,8 +142,8 @@ export default function ExitLettersPage() {
   });
 
   // Permissions
-  const isHR = userData?.role === 'hr';
-  const isDirector = userData?.role === 'director';
+  const isHR = hasRole('hr');
+  const isDirector = hasRole('director');
   const hasAccess = isHR || isDirector;
 
   useEffect(() => {
@@ -185,6 +185,9 @@ export default function ExitLettersPage() {
         if (pendingRes.ok) {
           const data = await pendingRes.json();
           setPendingRequests(data);
+        } else {
+          console.error('Pending approvals fetch failed', pendingRes.status, await pendingRes.text());
+          toast.error('Failed to load pending approvals');
         }
       }
 

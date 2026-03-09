@@ -102,6 +102,11 @@ export default function ShiftsPage() {
   const [myShifts, setMyShifts] = useState<Shift[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<Shift[]>([]);
   const [reportees, setReportees] = useState<Employee[]>([]);
+
+  // filters for all shifts
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'approved' | 'pending' | 'rejected'>('all');
   
   // Dialogs
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -153,7 +158,7 @@ export default function ShiftsPage() {
   const fetchReportees = async () => {
     try {
       const token = await user?.getIdToken();
-      const response = await fetch(`${API_BASE_URL}/users`, {
+      const response = await fetch(`${API_BASE_URL}/users?limit=500`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
 
@@ -569,6 +574,45 @@ export default function ShiftsPage() {
                 <CardDescription>View and manage all shift allocations</CardDescription>
               </CardHeader>
               <CardContent>
+                <div className="flex flex-wrap gap-4 mb-4">
+                  <div>
+                    <Label htmlFor="start-date" className="text-sm">Start Date</Label>
+                    <Input
+                      id="start-date"
+                      type="date"
+                      value={filterStartDate}
+                      onChange={(e) => setFilterStartDate(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="end-date" className="text-sm">End Date</Label>
+                    <Input
+                      id="end-date"
+                      type="date"
+                      value={filterEndDate}
+                      onChange={(e) => setFilterEndDate(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="status-filter" className="text-sm">Status</Label>
+                    <Select
+                      value={filterStatus}
+                      onValueChange={(v) => setFilterStatus(v as any)}
+                    >
+                      <SelectTrigger id="status-filter" className="w-40">
+                        <SelectValue placeholder="All" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All</SelectItem>
+                        <SelectItem value="approved">Approved</SelectItem>
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="rejected">Rejected</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
                 {shifts.length > 0 ? (
                   <Table>
                     <TableHeader>
@@ -583,7 +627,20 @@ export default function ShiftsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {shifts.map((shift) => (
+                      {shifts
+                        .filter((shift) => {
+                          if (filterStatus !== 'all' && shift.status !== filterStatus) {
+                            return false;
+                          }
+                          if (filterStartDate && shift.shift_date < filterStartDate) {
+                            return false;
+                          }
+                          if (filterEndDate && shift.shift_date > filterEndDate) {
+                            return false;
+                          }
+                          return true;
+                        })
+                        .map((shift) => (
                         <TableRow key={shift.id}>
                           <TableCell>
                             <div>
@@ -968,7 +1025,7 @@ export default function ShiftsPage() {
 
       {/* Bulk Allocate Shifts Dialog */}
       <Dialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Bulk Allocate Shifts</DialogTitle>
             <DialogDescription>

@@ -39,7 +39,6 @@ class Settings(BaseSettings):
         env_file = ".env"
         case_sensitive = False
 
-
 @lru_cache()
 def get_settings() -> Settings:
     """Get cached settings instance"""

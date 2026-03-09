@@ -56,7 +56,7 @@ app.include_router(reports.router, prefix="/api")
 app.include_router(departments.router, prefix="/api")
 app.include_router(letters.router, prefix="/api")
 app.include_router(onboarding.router, prefix="/api")
-
+app.include_router(shifts.router, prefix="/api")
 
 @app.get("/")
 async def root():

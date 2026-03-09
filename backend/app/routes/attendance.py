@@ -62,43 +62,39 @@ async def get_attendance(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     user_id: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
+    attendance_status: Optional[str] = Query(None, alias="status"),
     current_user: dict = Depends(get_current_user)
 ):
-    """
-    Get attendance records with optional filters
-    Optimized for dashboard queries
-    """
     try:
         query = db.collection("attendance")
-        
-        # Apply filters
+
         if user_id:
             query = query.where("user_id", "==", user_id)
-        if start_date:
-            query = query.where("date", ">=", start_date)
-        if end_date:
-            query = query.where("date", "<=", end_date)
-        if status:
-            query = query.where("status", "==", status)
-        
-        # Limit results for performance (dashboard only needs today's data)
+
+        if attendance_status:
+            query = query.where("status", "==", attendance_status)
+
         query = query.limit(1000)
-        
+
         attendance_list = []
         for doc in query.stream():
             attendance_data = doc.to_dict()
             attendance_data["id"] = doc.id
+
+            if start_date and attendance_data.get("date", "") < start_date:
+                continue
+            if end_date and attendance_data.get("date", "") > end_date:
+                continue
+
             attendance_list.append(AttendanceResponse(**attendance_data))
-        
+
         return attendance_list
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching attendance: {str(e)}"
         )
-
 
 @router.get("/user/{user_id}", response_model=list[AttendanceResponse])
 async def get_user_attendance(

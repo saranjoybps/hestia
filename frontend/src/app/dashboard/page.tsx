@@ -25,6 +25,7 @@ interface Announcement {
   createdByName: string;
   priority: string;
   status: string;
+  expiryDate?: string;
 }
 
 export default function DashboardPage() {
@@ -44,12 +45,12 @@ export default function DashboardPage() {
   useEffect(() => {
     if (user) {
       fetchDashboardData();
-      
+
       // Auto-refresh every 30 seconds
       const interval = setInterval(() => {
         fetchDashboardData();
       }, 30000);
-      
+
       return () => clearInterval(interval);
     }
   }, [user]);
@@ -61,44 +62,44 @@ export default function DashboardPage() {
     } else {
       setRefreshing(true);
     }
-    
+
     try {
       const token = await user?.getIdToken();
       const today = format(new Date(), 'yyyy-MM-dd');
       const timestamp = Date.now(); // Cache buster
-      
+
       // Fetch all data in parallel with optimized limits and cache busting
       const [usersRes, attendanceRes, leavesRes, announcementsRes, departmentsRes] = await Promise.all([
         fetch(`${API_BASE_URL}/users?page=1&limit=10&_t=${timestamp}`, {
-          headers: { 
+          headers: {
             'Authorization': `Bearer ${token}`,
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache'
           },
         }),
         fetch(`${API_BASE_URL}/attendance?start_date=${today}&end_date=${today}&_t=${timestamp}`, {
-          headers: { 
+          headers: {
             'Authorization': `Bearer ${token}`,
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache'
           },
         }),
         fetch(`${API_BASE_URL}/leaves?status=pending&page=1&limit=10&_t=${timestamp}`, {
-          headers: { 
+          headers: {
             'Authorization': `Bearer ${token}`,
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache'
           },
         }),
         fetch(`${API_BASE_URL}/announcements?status=published&_t=${timestamp}`, {
-          headers: { 
+          headers: {
             'Authorization': `Bearer ${token}`,
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache'
           },
         }),
         fetch(`${API_BASE_URL}/departments?_t=${timestamp}`, {
-          headers: { 
+          headers: {
             'Authorization': `Bearer ${token}`,
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache'
@@ -114,32 +115,49 @@ export default function DashboardPage() {
 
       // Calculate stats
       const totalEmployees = usersData.total || usersData.users?.length || 0;
-      const todayAttendance = Array.isArray(attendanceData) ? attendanceData : [];
-      const presentCount = todayAttendance.filter((a: any) => 
-        a.status === 'present' || a.status === 'half-day'
+
+      // attendanceData can be array directly; statuses come back as 'present','half_day',etc.
+      const attendanceArray: any[] = Array.isArray(attendanceData)
+        ? attendanceData
+        : Array.isArray(attendanceData.attendance)
+          ? attendanceData.attendance
+          : [];
+
+      const presentCount = attendanceArray.filter((a: any) =>
+        a.status === 'present' || a.status === 'half-day' || a.status === 'half_day'
       ).length;
-      const attendancePercentage = totalEmployees > 0 
-        ? (presentCount / totalEmployees) * 100 
+
+      const attendancePercentage = totalEmployees > 0
+        ? (presentCount / totalEmployees) * 100
         : 0;
+
+      // pending leaves count: leavesData usually returns an array (list_leaves)
+      const pendingLeavesCount = Array.isArray(leavesData)
+        ? leavesData.length
+        : leavesData.total || leavesData.leaves?.length || 0;
 
       setStats({
         totalEmployees,
         presentToday: presentCount,
         attendancePercentage,
-        pendingLeaves: leavesData.total || leavesData.leaves?.length || 0,
+        pendingLeaves: pendingLeavesCount,
         totalDepartments: departmentsData.departments?.length || 0,
       });
 
       // Get recent announcements (published only)
       const announcements = Array.isArray(announcementsData) ? announcementsData : (announcementsData.announcements || []);
+
       const publishedAnnouncements = announcements
-        .filter((a: Announcement) => a.status === 'published')
-        .sort((a: Announcement, b: Announcement) => 
+        .filter((a: Announcement) => {
+          console.log(a.title, 'expiryDate:', a.expiryDate, 'today:', today); // 👈 debug
+          return a.status === 'published' && (!a.expiryDate || a.expiryDate >= today);
+        })
+        .sort((a: Announcement, b: Announcement) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         )
         .slice(0, 3);
       setRecentAnnouncements(publishedAnnouncements);
-      
+
       // Update last refresh time
       setLastRefresh(new Date());
 
@@ -212,8 +230,8 @@ export default function DashboardPage() {
             Last updated: {format(lastRefresh, 'MMM dd, yyyy HH:mm:ss')} • Auto-refreshes every 30s
           </p>
         </div>
-        <Button 
-          onClick={() => fetchDashboardData()} 
+        <Button
+          onClick={() => fetchDashboardData()}
           disabled={loading || refreshing}
           variant="outline"
           size="sm"
@@ -263,12 +281,11 @@ export default function DashboardPage() {
               <div className="space-y-4">
                 {recentAnnouncements.map((announcement) => (
                   <div key={announcement.id} className="flex items-start gap-3">
-                    <div className={`h-2 w-2 rounded-full mt-2 ${
-                      announcement.priority === 'urgent' ? 'bg-red-500' :
+                    <div className={`h-2 w-2 rounded-full mt-2 ${announcement.priority === 'urgent' ? 'bg-red-500' :
                       announcement.priority === 'high' ? 'bg-orange-500' :
-                      announcement.priority === 'medium' ? 'bg-yellow-500' :
-                      'bg-blue-500'
-                    }`} />
+                        announcement.priority === 'medium' ? 'bg-yellow-500' :
+                          'bg-blue-500'
+                      }`} />
                     <div className="flex-1">
                       <p className="text-sm font-medium">{announcement.title}</p>
                       <p className="text-xs text-gray-500">{getTimeAgo(announcement.createdAt)}</p>

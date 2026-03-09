@@ -66,22 +66,36 @@ export default function ProfilePage() {
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    
+
     try {
       const token = await user?.getIdToken();
-      const response = await fetch(`http://localhost:8000/users/${userData?.uid}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name: profileData.name,
-          phone: profileData.phone,
-          department: profileData.department,
-          designation: profileData.designation,
-        }),
-      });
+
+      // build payload dynamically
+      const payload: any = {};
+
+      if (profileData.name) payload.name = profileData.name;
+      if (profileData.phone) payload.phone = profileData.phone;
+      if (profileData.dateOfJoining) payload.dateOfJoining = profileData.dateOfJoining;
+
+      // only send these if admin (optional safety)
+      if (userData?.role === 'hr' || userData?.role === 'director') {
+        if (profileData.department) payload.department = profileData.department;
+        if (profileData.designation) payload.designation = profileData.designation;
+      }
+
+      console.log("Sending payload:", payload);
+
+      const response = await fetch(
+        `http://localhost:8000/api/users/${userData?.uid}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        }
+      );
 
       if (!response.ok) {
         const error = await response.json();
@@ -89,7 +103,6 @@ export default function ProfilePage() {
       }
 
       toast.success('Profile updated successfully!');
-      // Refresh user data
       window.location.reload();
     } catch (error) {
       console.error('Profile update error:', error);
@@ -101,7 +114,7 @@ export default function ProfilePage() {
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       toast.error('New passwords do not match');
       return;
@@ -113,12 +126,12 @@ export default function ProfilePage() {
     }
 
     setLoading(true);
-    
+
     try {
       // Import Firebase auth functions dynamically
       const { getAuth, updatePassword, reauthenticateWithCredential, EmailAuthProvider } = await import('firebase/auth');
       const auth = getAuth();
-      
+
       if (!auth.currentUser || !user) {
         throw new Error('No authenticated user');
       }
@@ -283,8 +296,7 @@ export default function ProfilePage() {
                       id="dateOfJoining"
                       type="date"
                       value={profileData.dateOfJoining}
-                      disabled
-                      className="bg-gray-50"
+                      onChange={(e) => setProfileData({ ...profileData, dateOfJoining: e.target.value })}
                     />
                   </div>
                 </div>

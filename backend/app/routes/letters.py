@@ -478,12 +478,14 @@ async def get_all_requests(current_user: dict = Depends(require_role("hr", "dire
 
 @router.get("/letters/pending")
 async def get_pending_requests(current_user: dict = Depends(require_role("director"))):
-    """Get pending letter requests (Directors only)"""
+    """Get pending letter requests (Directors only)
+
+    The query deliberately avoids an `order_by` clause to prevent the
+    Firestore composite index requirement. Sorting is performed in Python.
+    """
     try:
-        requests = db.collection('letter_requests')\
-            .where('status', '==', 'pending')\
-            .order_by('requestedOn', direction=firestore.Query.DESCENDING)\
-            .stream()
+        query = db.collection('letter_requests').where('status', '==', 'pending')
+        requests = query.stream()
         
         result = []
         for req in requests:
@@ -491,6 +493,8 @@ async def get_pending_requests(current_user: dict = Depends(require_role("direct
             data['id'] = req.id
             result.append(data)
         
+        # sort by requestedOn descending
+        result.sort(key=lambda x: x.get('requestedOn', ''), reverse=True)
         return result
         
     except Exception as e:
@@ -500,9 +504,11 @@ async def get_pending_requests(current_user: dict = Depends(require_role("direct
 async def get_issued_letters(current_user: dict = Depends(require_role("hr", "director"))):
     """Get all approved/issued letters"""
     try:
+        # We used to sort directly in the Firestore query, but that required creating
+        # a composite index which was causing errors for some users (e.g. Directors).
+        # To avoid index configuration, fetch the documents and sort in Python.
         letters = db.collection('letter_requests')\
             .where('status', '==', 'approved')\
-            .order_by('approvedOn', direction=firestore.Query.DESCENDING)\
             .stream()
         
         result = []
@@ -510,6 +516,12 @@ async def get_issued_letters(current_user: dict = Depends(require_role("hr", "di
             data = letter.to_dict()
             data['id'] = letter.id
             result.append(data)
+        
+        # sort by approvedOn descending; missing values are treated as oldest
+        result.sort(
+            key=lambda d: d.get('approvedOn') or 0,
+            reverse=True
+        )
         
         return result
         
