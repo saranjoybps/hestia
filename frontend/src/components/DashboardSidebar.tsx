@@ -69,7 +69,7 @@ const navItems: NavItem[] = [
     icon: TrendingUp,
   },
   {
-    title: 'Onboarding',
+    title: 'Employees',
     href: '/dashboard/employees',
     icon: UserPlus,
     roles: ['manager', 'director', 'hr'],
