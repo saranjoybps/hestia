@@ -7,7 +7,9 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-
+import {
+  Calendar as CalendarIcon,
+} from 'lucide-react';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 import {
   Table,
@@ -18,13 +20,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import {
   Select,
   SelectContent,
@@ -36,10 +38,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { 
-  CalendarDays, 
-  Plus, 
-  Check, 
+import {
+  CalendarDays,
+  Plus,
+  Check,
   X,
   Clock,
   FileText,
@@ -266,7 +268,7 @@ export default function LeavesPage() {
 
   const handleApproveLeave = async () => {
     if (!processingLeave) return;
-    
+
     setLoading(true);
     try {
       const token = await user?.getIdToken();
@@ -305,7 +307,7 @@ export default function LeavesPage() {
 
   const handleRejectLeave = async () => {
     if (!processingLeave) return;
-    
+
     setLoading(true);
     try {
       const token = await user?.getIdToken();
@@ -419,59 +421,91 @@ export default function LeavesPage() {
           <p className="text-gray-600 mt-1">Manage leave requests and track leave balance</p>
         </div>
         <div className="flex gap-3">
+
+          <Button onClick={() => setShowCreateDialog(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Request Leave
+          </Button>
           {isHR && (
             <Button variant="outline" onClick={exportReport}>
               <Download className="h-4 w-4 mr-2" />
               Export Report
             </Button>
           )}
-          <Button onClick={() => setShowCreateDialog(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Request Leave
-          </Button>
+
         </div>
       </div>
 
       {/* Leave Balance Card */}
       {leaveBalance && (
         <Card>
-          <CardHeader>
-            <CardTitle>Your Leave Balance</CardTitle>
-            <CardDescription>Available leave days for current year</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div className="p-4 bg-gray-50 rounded-lg opacity-60">
-                <p className="text-sm text-gray-600">Casual Leave</p>
-                <p className="text-3xl font-bold text-gray-400">{leaveBalance.casual}</p>
-                <p className="text-xs text-gray-500 mt-1">not allocated</p>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-6">
+              {/* Total Available */}
+              <div className="flex items-center gap-3 pr-6 border-r">
+                <div className="p-2 bg-blue-100 rounded-full">
+                  <CalendarIcon className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Total Available</p>
+                  <p className="text-2xl font-bold text-blue-600">{leaveBalance.totalAvailable}</p>
+                  <p className="text-xs text-gray-400">days remaining</p>
+                </div>
               </div>
-              <div className="p-4 bg-green-50 rounded-lg border-2 border-green-300">
-                <p className="text-sm text-gray-600 font-semibold">Sick Leave</p>
-                <p className="text-3xl font-bold text-green-600">{leaveBalance.sick}</p>
-                <p className="text-xs text-gray-500 mt-1">days remaining</p>
+
+              {/* Stats Row */}
+              <div className="flex flex-1 items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-8 bg-gray-300 rounded-full" />
+                  <div>
+                    <p className="text-xs text-gray-500">Casual Leave</p>
+                    <p className="text-xl font-bold text-gray-400">{leaveBalance.casual}</p>
+                    <p className="text-xs text-gray-400">not allocated</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-8 bg-green-500 rounded-full" />
+                  <div>
+                    <p className="text-xs text-gray-500">Sick Leave</p>
+                    <p className="text-xl font-bold text-gray-900">{leaveBalance.sick}</p>
+                    <p className="text-xs text-gray-400">days remaining</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-8 bg-gray-300 rounded-full" />
+                  <div>
+                    <p className="text-xs text-gray-500">Annual Leave</p>
+                    <p className="text-xl font-bold text-gray-400">{leaveBalance.annual}</p>
+                    <p className="text-xs text-gray-400">not allocated</p>
+                  </div>
+                </div>
+
+                <div className="pl-4 border-l flex items-center gap-2">
+                  <div className="w-2 h-8 bg-red-500 rounded-full" />
+                  <div>
+                    <p className="text-xs text-gray-500">Total Used</p>
+                    <p className="text-xl font-bold text-red-600">{leaveBalance.totalUsed}</p>
+                    <p className="text-xs text-gray-400">days used</p>
+                  </div>
+                </div>
               </div>
-              <div className="p-4 bg-gray-50 rounded-lg opacity-60">
-                <p className="text-sm text-gray-600">Annual Leave</p>
-                <p className="text-3xl font-bold text-gray-400">{leaveBalance.annual}</p>
-                <p className="text-xs text-gray-500 mt-1">not allocated</p>
-              </div>
-            </div>
-            <Separator className="my-4" />
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Total Available</span>
-              <span className="font-bold text-lg">{leaveBalance.totalAvailable} days</span>
-            </div>
-            <div className="flex justify-between text-sm mt-2">
-              <span className="text-gray-600">Total Used</span>
-              <span className="font-bold text-lg text-red-600">{leaveBalance.totalUsed} days</span>
             </div>
           </CardContent>
         </Card>
       )}
 
       {/* Tabs */}
-      <Tabs defaultValue="my-leaves" className="space-y-4">
+      <Tabs defaultValue="my-leaves" onValueChange={(value) => {
+        if (value === 'my-leaves') {
+          fetchLeaveRequests();
+        } else if (value === 'approvals' && canApprove) {
+          fetchPendingApprovals();
+        } else if (value === 'reports' && isHR) {
+          fetchLeaveStats();
+        }
+      }} className="space-y-4">
         <TabsList>
           <TabsTrigger value="my-leaves">My Leaves ({leaveRequests.length})</TabsTrigger>
           {canApprove && (
@@ -796,19 +830,20 @@ export default function LeavesPage() {
       </Tabs>
 
       {/* Create Leave Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Request Leave</DialogTitle>
-            <DialogDescription>
-              Submit a new leave request for approval
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
+      <Sheet open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Request Leave</SheetTitle>
+              <SheetDescription className="mt-1">Submit a new leave request for approval</SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6 space-y-5">
             <div className="space-y-2">
               <Label htmlFor="leave-type">Leave Type *</Label>
-              <Select 
-                value={formData.leaveType} 
+              <Select
+                value={formData.leaveType}
                 onValueChange={(value: any) => setFormData({ ...formData, leaveType: value })}
               >
                 <SelectTrigger id="leave-type">
@@ -822,7 +857,7 @@ export default function LeavesPage() {
                   <SelectItem value="paternity">Paternity Leave</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500">
                 Only Sick Leave, Compensatory Off, and other special leaves are available
               </p>
             </div>
@@ -838,7 +873,6 @@ export default function LeavesPage() {
                   min={format(new Date(), 'yyyy-MM-dd')}
                 />
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="end-date">End Date *</Label>
                 <Input
@@ -852,7 +886,7 @@ export default function LeavesPage() {
             </div>
 
             {formData.startDate && formData.endDate && (
-              <div className="p-3 bg-blue-50 rounded-lg">
+              <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
                 <p className="text-sm text-blue-900">
                   Total days: <strong>
                     {differenceInDays(new Date(formData.endDate), new Date(formData.startDate)) + 1}
@@ -872,66 +906,67 @@ export default function LeavesPage() {
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowCreateDialog(false);
-              resetForm();
-            }}>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowCreateDialog(false); resetForm(); }}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleCreateLeave} 
+            <Button
+              onClick={handleCreateLeave}
               disabled={loading || !formData.startDate || !formData.endDate || !formData.reason}
             >
               {loading ? 'Submitting...' : 'Submit Request'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* View Leave Dialog */}
-      <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Leave Request Details</DialogTitle>
-          </DialogHeader>
+      <Sheet open={showViewDialog} onOpenChange={setShowViewDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Leave Request Details</SheetTitle>
+            </SheetHeader>
+          </div>
+
           {viewingLeave && (
-            <div className="space-y-4 py-4">
+            <div className="p-6 space-y-5">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-lg">{getLeaveTypeLabel(viewingLeave.leaveType)}</h3>
-                <Badge className={getStatusBadge(viewingLeave.status)}>
-                  {viewingLeave.status}
-                </Badge>
+                <Badge className={getStatusBadge(viewingLeave.status)}>{viewingLeave.status}</Badge>
               </div>
 
               <Separator />
 
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-600">Start Date</p>
-                  <p className="font-medium">{format(new Date(viewingLeave.startDate), 'MMMM dd, yyyy')}</p>
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Start Date</p>
+                  <p className="font-medium text-sm">{format(new Date(viewingLeave.startDate), 'MMMM dd, yyyy')}</p>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600">End Date</p>
-                  <p className="font-medium">{format(new Date(viewingLeave.endDate), 'MMMM dd, yyyy')}</p>
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">End Date</p>
+                  <p className="font-medium text-sm">{format(new Date(viewingLeave.endDate), 'MMMM dd, yyyy')}</p>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600">Total Days</p>
-                  <p className="font-medium">{viewingLeave.totalDays} day{viewingLeave.totalDays > 1 ? 's' : ''}</p>
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Total Days</p>
+                  <p className="font-medium text-sm">{viewingLeave.totalDays} day{viewingLeave.totalDays > 1 ? 's' : ''}</p>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600">Applied On</p>
-                  <p className="font-medium">{format(new Date(viewingLeave.appliedDate), 'MMM dd, yyyy')}</p>
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Applied On</p>
+                  <p className="font-medium text-sm">{format(new Date(viewingLeave.appliedDate), 'MMM dd, yyyy')}</p>
                 </div>
               </div>
 
-              <div>
-                <p className="text-sm text-gray-600 mb-2">Reason</p>
-                <p className="text-gray-800 bg-gray-50 p-3 rounded-lg">{viewingLeave.reason}</p>
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500 uppercase tracking-wide">Reason</p>
+                <p className="text-gray-800 bg-gray-50 border border-gray-100 p-3 rounded-lg text-sm leading-relaxed">
+                  {viewingLeave.reason}
+                </p>
               </div>
 
               {viewingLeave.status === 'approved' && viewingLeave.approverName && (
-                <div className="p-3 bg-green-50 rounded-lg">
+                <div className="p-4 bg-green-50 border border-green-100 rounded-lg">
                   <p className="text-sm text-green-900">
                     Approved by <strong>{viewingLeave.approverName}</strong>
                     {viewingLeave.approvalDate && ` on ${format(new Date(viewingLeave.approvalDate), 'MMM dd, yyyy')}`}
@@ -940,99 +975,99 @@ export default function LeavesPage() {
               )}
 
               {viewingLeave.status === 'rejected' && (
-                <div className="p-3 bg-red-50 rounded-lg">
-                  <p className="text-sm text-red-900 font-medium mb-1">Rejection Reason:</p>
+                <div className="p-4 bg-red-50 border border-red-100 rounded-lg space-y-1">
+                  <p className="text-sm text-red-900 font-medium">Rejection Reason</p>
                   <p className="text-sm text-red-800">{viewingLeave.rejectionReason || 'No reason provided'}</p>
                 </div>
               )}
             </div>
           )}
-          <DialogFooter>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end">
             <Button onClick={() => setShowViewDialog(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Approve Dialog */}
-      <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Approve Leave Request</DialogTitle>
-            <DialogDescription>
-              Confirm approval for this leave request
-            </DialogDescription>
-          </DialogHeader>
-          {processingLeave && (
-            <div className="py-4">
-              <div className="p-4 bg-green-50 rounded-lg space-y-2">
-                <p className="font-semibold">{processingLeave.userName}</p>
+      <Sheet open={showApproveDialog} onOpenChange={setShowApproveDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Approve Leave Request</SheetTitle>
+              <SheetDescription className="mt-1">Confirm approval for this leave request</SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6">
+            {processingLeave && (
+              <div className="p-4 bg-green-50 border border-green-100 rounded-lg space-y-2">
+                <p className="font-semibold text-gray-900">{processingLeave.userName}</p>
                 <p className="text-sm text-gray-600">
                   {getLeaveTypeLabel(processingLeave.leaveType)} • {processingLeave.totalDays} day{processingLeave.totalDays > 1 ? 's' : ''}
                 </p>
                 <p className="text-sm text-gray-600">
-                  {format(new Date(processingLeave.startDate), 'MMM dd')} - {format(new Date(processingLeave.endDate), 'MMM dd, yyyy')}
+                  {format(new Date(processingLeave.startDate), 'MMM dd')} – {format(new Date(processingLeave.endDate), 'MMM dd, yyyy')}
                 </p>
               </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowApproveDialog(false)}>
-              Cancel
-            </Button>
+            )}
+          </div>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setShowApproveDialog(false)}>Cancel</Button>
             <Button onClick={handleApproveLeave} disabled={loading} className="bg-green-600 hover:bg-green-700">
               {loading ? 'Approving...' : 'Approve Leave'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Reject Dialog */}
-      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reject Leave Request</DialogTitle>
-            <DialogDescription>
-              Provide a reason for rejection
-            </DialogDescription>
-          </DialogHeader>
-          {processingLeave && (
-            <div className="space-y-4 py-4">
-              <div className="p-4 bg-red-50 rounded-lg space-y-2">
-                <p className="font-semibold">{processingLeave.userName}</p>
+      <Sheet open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Reject Leave Request</SheetTitle>
+              <SheetDescription className="mt-1">Provide a reason for rejection</SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6 space-y-5">
+            {processingLeave && (
+              <div className="p-4 bg-red-50 border border-red-100 rounded-lg space-y-2">
+                <p className="font-semibold text-gray-900">{processingLeave.userName}</p>
                 <p className="text-sm text-gray-600">
                   {getLeaveTypeLabel(processingLeave.leaveType)} • {processingLeave.totalDays} day{processingLeave.totalDays > 1 ? 's' : ''}
                 </p>
               </div>
+            )}
 
-              <div className="space-y-2">
-                <Label htmlFor="rejection-reason">Reason for Rejection *</Label>
-                <Textarea
-                  id="rejection-reason"
-                  placeholder="Please provide a reason..."
-                  value={rejectionReason}
-                  onChange={(e) => setRejectionReason(e.target.value)}
-                  rows={4}
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="rejection-reason">Reason for Rejection *</Label>
+              <Textarea
+                id="rejection-reason"
+                placeholder="Please provide a reason..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                rows={4}
+              />
             </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowRejectDialog(false);
-              setRejectionReason('');
-            }}>
+          </div>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowRejectDialog(false); setRejectionReason(''); }}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleRejectLeave} 
+            <Button
+              onClick={handleRejectLeave}
               disabled={loading || !rejectionReason}
               className="bg-red-600 hover:bg-red-700"
             >
               {loading ? 'Rejecting...' : 'Reject Leave'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

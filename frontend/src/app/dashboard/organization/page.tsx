@@ -9,13 +9,12 @@ import { Label } from '@/components/ui/label';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import {
   Select,
   SelectContent,
@@ -36,7 +35,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { 
+import {
   Users,
   Building2,
   UserCog,
@@ -87,19 +86,19 @@ export default function OrganizationPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [hierarchy, setHierarchy] = useState<HierarchyNode[]>([]);
-  
+
   // Dialogs
   const [showUserDialog, setShowUserDialog] = useState(false);
   const [showDepartmentDialog, setShowDepartmentDialog] = useState(false);
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [showDeleteDeptDialog, setShowDeleteDeptDialog] = useState(false);
-  
+
   // Selected items
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [viewingUser, setViewingUser] = useState<User | null>(null);
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
   const [deletingDepartment, setDeletingDepartment] = useState<Department | null>(null);
-  
+
   // Form data
   const [userForm, setUserForm] = useState<{
     uid: string;
@@ -116,7 +115,7 @@ export default function OrganizationPage() {
     manager_id: '',
     lead_id: '',
   });
-  
+
   const [deptForm, setDeptForm] = useState({
     name: '',
     description: '',
@@ -138,7 +137,7 @@ export default function OrganizationPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      
+
       // Fetch users and departments in parallel with pagination
       const [usersRes, deptsRes] = await Promise.all([
         fetch(`${API_BASE_URL}/users?page=1&limit=50`, {
@@ -152,23 +151,23 @@ export default function OrganizationPage() {
       if (usersRes.ok) {
         const data = await usersRes.json();
         const usersList = data.users || [];
-        
+
         // Enrich users with manager/lead names
         const enrichedUsers = usersList.map((u: User) => ({
           ...u,
           managerName: u.manager_id ? usersList.find((m: User) => m.uid === u.manager_id)?.name : undefined,
           leadName: u.lead_id ? usersList.find((l: User) => l.uid === u.lead_id)?.name : undefined,
         }));
-        
+
         setUsers(enrichedUsers);
         buildHierarchy(enrichedUsers);
-        
+
         // Update department employee counts with actual user data from frontend
         // (only if departments have already been loaded)
         if (deptsRes.ok) {
           const data = await deptsRes.json();
           const deptsList = data.departments || [];
-          
+
           // Use backend-provided employeeCount (already calculated correctly)
           // Backend counts ALL users, not just the paginated 50 we fetch here
           setDepartments(deptsList);
@@ -190,20 +189,20 @@ export default function OrganizationPage() {
 
   const buildHierarchy = (usersList: User[]) => {
     // Build hierarchy tree starting from directors/top-level managers
-    const topLevel = usersList.filter(u => 
+    const topLevel = usersList.filter(u =>
       u.role === 'director' || (u.role === 'manager' && !u.manager_id)
     );
-    
+
     const buildNode = (user: User): HierarchyNode => {
       const directReports = usersList.filter(u => u.manager_id === user.uid);
       const leadReports = usersList.filter(u => u.lead_id === user.uid && !directReports.includes(u));
-      
+
       return {
         user,
         reportees: [...directReports, ...leadReports].map(buildNode),
       };
     };
-    
+
     setHierarchy(topLevel.map(buildNode));
   };
 
@@ -211,39 +210,39 @@ export default function OrganizationPage() {
     console.log('🔵 handleUpdateUser called');
     console.log('selectedUser:', selectedUser);
     console.log('userForm:', userForm);
-    
+
     if (!selectedUser) {
       console.log('❌ No selected user, returning');
       return;
     }
-    
+
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      
+
       // Prepare update data
       const updateData: any = {
         role: userForm.role,
         department: userForm.department,
         designation: userForm.designation,
       };
-      
+
       // Only include manager_id if it has a value or explicitly set to null
       if (userForm.manager_id && userForm.manager_id !== 'none') {
         updateData.manager_id = userForm.manager_id;
       } else {
         updateData.manager_id = null;
       }
-      
+
       // Only include lead_id if it has a value or explicitly set to null
       if (userForm.lead_id && userForm.lead_id !== 'none') {
         updateData.lead_id = userForm.lead_id;
       } else {
         updateData.lead_id = null;
       }
-      
+
       console.log('Updating user with data:', updateData);
-      
+
       const response = await fetch(`${API_BASE_URL}/users/${selectedUser.uid}`, {
         method: 'PUT',
         headers: {
@@ -282,10 +281,10 @@ export default function OrganizationPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      const url = editingDepartment 
+      const url = editingDepartment
         ? `${API_BASE_URL}/departments/${editingDepartment.id}`
         : `${API_BASE_URL}/departments/`;
-      
+
       const response = await fetch(url, {
         method: editingDepartment ? 'PUT' : 'POST',
         headers: {
@@ -315,7 +314,7 @@ export default function OrganizationPage() {
 
   const handleDeleteDepartment = async () => {
     if (!deletingDepartment) return;
-    
+
     setLoading(true);
     try {
       const token = await user?.getIdToken();
@@ -404,10 +403,10 @@ export default function OrganizationPage() {
       lead: { bg: 'bg-yellow-100 text-yellow-800', icon: Award },
       employee: { bg: 'bg-gray-100 text-gray-800', icon: User },
     };
-    
+
     const style = styles[role] || styles.employee;
     const Icon = style.icon;
-    
+
     return (
       <Badge className={style.bg}>
         <Icon className="h-3 w-3 mr-1" />
@@ -419,7 +418,7 @@ export default function OrganizationPage() {
   const getReportingChain = (user: User): string[] => {
     const chain: string[] = [user.name];
     let current = user;
-    
+
     while (current.manager_id || current.lead_id) {
       const nextId = current.manager_id || current.lead_id;
       const next = users.find(u => u.uid === nextId);
@@ -427,7 +426,7 @@ export default function OrganizationPage() {
       chain.push(next.name);
       current = next;
     }
-    
+
     return chain;
   };
 
@@ -516,7 +515,7 @@ export default function OrganizationPage() {
                 </div>
               </div>
             </div>
-            
+
             <div>
               <h3 className="font-semibold mb-3 flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
@@ -697,13 +696,13 @@ export default function OrganizationPage() {
                             )}
                           </div>
                         </div>
-                        
+
                         {dept.description && (
                           <p className="text-sm text-gray-600 mb-3">{dept.description}</p>
                         )}
-                        
+
                         <Separator className="my-3" />
-                        
+
                         <div className="space-y-2 text-sm">
                           <div className="flex items-center justify-between">
                             <span className="text-gray-600">Department Head:</span>
@@ -757,25 +756,26 @@ export default function OrganizationPage() {
       </Tabs>
 
       {/* Edit User Dialog */}
-      <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Edit User Role & Hierarchy</DialogTitle>
-            <DialogDescription>
-              Update user role, department, and reporting structure
-            </DialogDescription>
-          </DialogHeader>
+      <Sheet open={showUserDialog} onOpenChange={setShowUserDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Edit User Role & Hierarchy</SheetTitle>
+              <SheetDescription className="mt-1">
+                Update user role, department, and reporting structure
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
           {selectedUser && (
-            <div className="space-y-4 py-4">
-              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+            <div className="p-6 space-y-5">
+              <div className="flex items-center gap-3 p-4 bg-gray-50 border border-gray-100 rounded-lg">
                 <Avatar className="h-12 w-12">
-                  <AvatarFallback>
-                    {selectedUser.name.split(' ').map(n => n[0]).join('')}
-                  </AvatarFallback>
+                  <AvatarFallback>{selectedUser.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
                 </Avatar>
                 <div>
-                  <p className="font-semibold">{selectedUser.name}</p>
-                  <p className="text-sm text-gray-600">{selectedUser.email}</p>
+                  <p className="font-semibold text-gray-900">{selectedUser.name}</p>
+                  <p className="text-sm text-gray-500">{selectedUser.email}</p>
                 </div>
               </div>
 
@@ -783,9 +783,7 @@ export default function OrganizationPage() {
                 <div className="space-y-2">
                   <Label htmlFor="role">Role *</Label>
                   <Select value={userForm.role} onValueChange={(value: any) => setUserForm({ ...userForm, role: value })}>
-                    <SelectTrigger id="role">
-                      <SelectValue />
-                    </SelectTrigger>
+                    <SelectTrigger id="role"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="employee">Employee</SelectItem>
                       <SelectItem value="lead">Lead</SelectItem>
@@ -797,11 +795,9 @@ export default function OrganizationPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="department">
-                    Department {userForm.role !== 'director' && '*'}
-                  </Label>
-                  <Select 
-                    value={userForm.department} 
+                  <Label htmlFor="department">Department {userForm.role !== 'director' && '*'}</Label>
+                  <Select
+                    value={userForm.department}
                     onValueChange={(value) => setUserForm({ ...userForm, department: value })}
                     disabled={userForm.role === 'director'}
                   >
@@ -810,9 +806,7 @@ export default function OrganizationPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {departments.map((dept) => (
-                        <SelectItem key={dept.id} value={dept.name}>
-                          {dept.name}
-                        </SelectItem>
+                        <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -821,39 +815,29 @@ export default function OrganizationPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="designation">Designation</Label>
-                <Input
-                  id="designation"
-                  value={userForm.designation}
+                <Input id="designation" value={userForm.designation}
                   onChange={(e) => setUserForm({ ...userForm, designation: e.target.value })}
-                  placeholder="e.g., Senior Developer, Team Lead"
-                />
+                  placeholder="e.g., Senior Developer, Team Lead" />
               </div>
 
               <Separator />
 
               <div className="space-y-4">
-                <h4 className="font-semibold">Reporting Structure</h4>
-                
+                <h4 className="font-semibold text-gray-900">Reporting Structure</h4>
+
                 <div className="space-y-2">
                   <Label htmlFor="manager">Reports to Manager</Label>
-                  <Select 
+                  <Select
                     value={userForm.manager_id || 'none'}
                     onValueChange={(value) => setUserForm({ ...userForm, manager_id: value === 'none' ? '' : value })}
                   >
-                    <SelectTrigger id="manager">
-                      <SelectValue placeholder="Select manager (optional)" />
-                    </SelectTrigger>
+                    <SelectTrigger id="manager"><SelectValue placeholder="Select manager (optional)" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">None</SelectItem>
                       {users
-                        .filter(u => 
-                          (u.role === 'manager' || u.role === 'director') && 
-                          u.uid !== selectedUser.uid
-                        )
+                        .filter(u => (u.role === 'manager' || u.role === 'director') && u.uid !== selectedUser.uid)
                         .map((u) => (
-                          <SelectItem key={u.uid} value={u.uid}>
-                            {u.name} ({u.designation})
-                          </SelectItem>
+                          <SelectItem key={u.uid} value={u.uid}>{u.name} ({u.designation})</SelectItem>
                         ))}
                     </SelectContent>
                   </Select>
@@ -862,21 +846,17 @@ export default function OrganizationPage() {
                 {userForm.role === 'employee' && (
                   <div className="space-y-2">
                     <Label htmlFor="lead">Reports to Lead</Label>
-                    <Select 
+                    <Select
                       value={userForm.lead_id || 'none'}
                       onValueChange={(value) => setUserForm({ ...userForm, lead_id: value === 'none' ? '' : value })}
                     >
-                      <SelectTrigger id="lead">
-                        <SelectValue placeholder="Select lead (optional)" />
-                      </SelectTrigger>
+                      <SelectTrigger id="lead"><SelectValue placeholder="Select lead (optional)" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">None</SelectItem>
                         {users
                           .filter(u => u.role === 'lead' && u.uid !== selectedUser.uid)
                           .map((u) => (
-                            <SelectItem key={u.uid} value={u.uid}>
-                              {u.name} ({u.designation})
-                            </SelectItem>
+                            <SelectItem key={u.uid} value={u.uid}>{u.name} ({u.designation})</SelectItem>
                           ))}
                       </SelectContent>
                     </Select>
@@ -885,36 +865,36 @@ export default function OrganizationPage() {
 
                 <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                   <p className="text-sm text-yellow-800">
-                    <strong>Note:</strong> Employees can report to a Lead, Manager, or Director. 
+                    <strong>Note:</strong> Employees can report to a Lead, Manager, or Director.
                     Leads must report to a Manager. All users except Directors must belong to a department.
                   </p>
                 </div>
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowUserDialog(false);
-              setSelectedUser(null);
-              resetUserForm();
-            }}>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowUserDialog(false); setSelectedUser(null); resetUserForm(); }}>
               Cancel
             </Button>
             <Button onClick={handleUpdateUser} disabled={loading}>
               {loading ? 'Saving...' : 'Save Changes'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* View User Dialog */}
-      <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>User Details</DialogTitle>
-          </DialogHeader>
+      <Sheet open={showViewDialog} onOpenChange={setShowViewDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">User Details</SheetTitle>
+            </SheetHeader>
+          </div>
+
           {viewingUser && (
-            <div className="space-y-4 py-4">
+            <div className="p-6 space-y-5">
               <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg">
                 <Avatar className="h-16 w-16">
                   <AvatarFallback className="text-xl">
@@ -929,29 +909,25 @@ export default function OrganizationPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">Department</p>
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Department</p>
                   <p className="font-semibold">{viewingUser.department || 'Not assigned'}</p>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600 mb-1">Designation</p>
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Designation</p>
                   <p className="font-semibold">{viewingUser.designation || 'Not assigned'}</p>
                 </div>
               </div>
 
               <Separator />
 
-              <div>
-                <h4 className="font-semibold mb-3">Reporting Chain</h4>
-                <div className="flex items-center gap-2 flex-wrap">
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Reporting Chain</p>
+                <div className="flex items-center gap-2 flex-wrap mt-1">
                   {getReportingChain(viewingUser).map((name, index, arr) => (
                     <div key={index} className="flex items-center gap-2">
-                      <Badge variant={index === 0 ? 'default' : 'outline'}>
-                        {name}
-                      </Badge>
-                      {index < arr.length - 1 && (
-                        <ChevronRight className="h-4 w-4 text-gray-400" />
-                      )}
+                      <Badge variant={index === 0 ? 'default' : 'outline'}>{name}</Badge>
+                      {index < arr.length - 1 && <ChevronRight className="h-4 w-4 text-gray-400" />}
                     </div>
                   ))}
                 </div>
@@ -960,11 +936,13 @@ export default function OrganizationPage() {
               {viewingUser.reportees && viewingUser.reportees.length > 0 && (
                 <>
                   <Separator />
-                  <div>
-                    <h4 className="font-semibold mb-3">Direct Reports ({viewingUser.reportees.length})</h4>
-                    <div className="space-y-2">
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                      Direct Reports ({viewingUser.reportees.length})
+                    </p>
+                    <div className="space-y-2 mt-1">
                       {viewingUser.reportees.map((reportee) => (
-                        <div key={reportee.uid} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                        <div key={reportee.uid} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
                           <Avatar className="h-8 w-8">
                             <AvatarFallback className="text-xs">
                               {reportee.name.split(' ').map(n => n[0]).join('')}
@@ -972,7 +950,7 @@ export default function OrganizationPage() {
                           </Avatar>
                           <div className="flex-1">
                             <p className="font-medium text-sm">{reportee.name}</p>
-                            <p className="text-xs text-gray-600">{reportee.designation}</p>
+                            <p className="text-xs text-gray-500">{reportee.designation}</p>
                           </div>
                           {getRoleBadge(reportee.role)}
                         </div>
@@ -983,45 +961,43 @@ export default function OrganizationPage() {
               )}
             </div>
           )}
-          <DialogFooter>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end">
             <Button onClick={() => setShowViewDialog(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Department Dialog */}
-      <Dialog open={showDepartmentDialog} onOpenChange={setShowDepartmentDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingDepartment ? 'Edit Department' : 'Add Department'}</DialogTitle>
-            <DialogDescription>
-              {editingDepartment ? 'Update department information' : 'Create a new department'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
+      <Sheet open={showDepartmentDialog} onOpenChange={setShowDepartmentDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">{editingDepartment ? 'Edit Department' : 'Add Department'}</SheetTitle>
+              <SheetDescription className="mt-1">
+                {editingDepartment ? 'Update department information' : 'Create a new department'}
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6 space-y-5">
             <div className="space-y-2">
               <Label htmlFor="dept-name">Department Name *</Label>
-              <Input
-                id="dept-name"
-                value={deptForm.name}
+              <Input id="dept-name" value={deptForm.name}
                 onChange={(e) => setDeptForm({ ...deptForm, name: e.target.value })}
-                placeholder="e.g., Engineering, Marketing"
-              />
+                placeholder="e.g., Engineering, Marketing" />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="dept-desc">Description</Label>
-              <Input
-                id="dept-desc"
-                value={deptForm.description}
+              <Input id="dept-desc" value={deptForm.description}
                 onChange={(e) => setDeptForm({ ...deptForm, description: e.target.value })}
-                placeholder="Brief description of the department"
-              />
+                placeholder="Brief description of the department" />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="dept-head">Department Head</Label>
-              <Select 
+              <Select
                 value={deptForm.head_id || 'none'}
                 onValueChange={(value) => setDeptForm({ ...deptForm, head_id: value === 'none' ? '' : value })}
               >
@@ -1033,43 +1009,37 @@ export default function OrganizationPage() {
                   {users
                     .filter(u => ['manager', 'director', 'hr', 'lead'].includes(u.role))
                     .map((u) => (
-                      <SelectItem key={u.uid} value={u.uid}>
-                        {u.name} ({u.role})
-                      </SelectItem>
+                      <SelectItem key={u.uid} value={u.uid}>{u.name} ({u.role})</SelectItem>
                     ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowDepartmentDialog(false);
-              setEditingDepartment(null);
-              resetDeptForm();
-            }}>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowDepartmentDialog(false); setEditingDepartment(null); resetDeptForm(); }}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleSaveDepartment} 
-              disabled={loading || !deptForm.name}
-            >
+            <Button onClick={handleSaveDepartment} disabled={loading || !deptForm.name}>
               {loading ? 'Saving...' : editingDepartment ? 'Update' : 'Create'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
+          </div>
+        </SheetContent>
+      </Sheet>
       {/* Delete Department Confirmation Dialog */}
-      <Dialog open={showDeleteDeptDialog} onOpenChange={setShowDeleteDeptDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Department</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this department?
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+      <Sheet open={showDeleteDeptDialog} onOpenChange={setShowDeleteDeptDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Delete Department</SheetTitle>
+              <SheetDescription className="mt-1">
+                Are you sure you want to delete this department?
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="flex gap-3">
                 <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
                 <div>
@@ -1089,27 +1059,17 @@ export default function OrganizationPage() {
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setShowDeleteDeptDialog(false);
-                setDeletingDepartment(null);
-              }}
-              disabled={loading}
-            >
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowDeleteDeptDialog(false); setDeletingDepartment(null); }} disabled={loading}>
               Cancel
             </Button>
-            <Button 
-              variant="destructive"
-              onClick={handleDeleteDepartment}
-              disabled={loading}
-            >
+            <Button variant="destructive" onClick={handleDeleteDepartment} disabled={loading}>
               {loading ? 'Deleting...' : 'Delete Department'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
