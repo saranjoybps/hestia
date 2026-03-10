@@ -17,13 +17,12 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import {
   Select,
   SelectContent,
@@ -46,11 +45,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { 
-  Users, 
-  UserPlus, 
-  Edit, 
-  Trash2, 
+import {
+  Users,
+  UserPlus,
+  Edit,
+  Trash2,
   Search,
   Filter,
   ChevronLeft,
@@ -144,7 +143,7 @@ export default function EmployeesPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [pendingRequests, setPendingRequests] = useState<OnboardingRequest[]>([]);
   const [myRequests, setMyRequests] = useState<OnboardingRequest[]>([]);
-  
+
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -211,7 +210,7 @@ export default function EmployeesPage() {
       const response = await fetch(`${API_BASE_URL}/departments`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setDepartments(data.departments || []);
@@ -295,17 +294,17 @@ export default function EmployeesPage() {
   const fetchPendingRequests = async () => {
     try {
       const token = await user?.getIdToken();
-      
+
       if (isDirector) {
         // Directors see all pending requests
         const params = new URLSearchParams({
           status: 'pending',
         });
-        
+
         const response = await fetch(`${API_BASE_URL}/onboarding/requests?${params}`, {
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}` 
+            'Authorization': `Bearer ${token}`
           },
         });
 
@@ -316,9 +315,9 @@ export default function EmployeesPage() {
       } else if (userData?.role === 'hr') {
         // HR sees all their own requests
         const response = await fetch(`${API_BASE_URL}/onboarding/requests`, {
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}` 
+            'Authorization': `Bearer ${token}`
           },
         });
 
@@ -336,7 +335,7 @@ export default function EmployeesPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      
+
       const response = await fetch(`${API_BASE_URL}/onboarding/requests/${requestId}/approve`, {
         method: 'PATCH',
         headers: {
@@ -365,7 +364,7 @@ export default function EmployeesPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      
+
       const response = await fetch(`${API_BASE_URL}/onboarding/requests/${requestId}/reject`, {
         method: 'PATCH',
         headers: {
@@ -394,7 +393,7 @@ export default function EmployeesPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      
+
       // Check if user is HR - create onboarding request instead of direct registration
       if (userData?.role === 'hr') {
         // Convert camelCase to snake_case for backend
@@ -408,7 +407,7 @@ export default function EmployeesPage() {
           manager_id: formData.managerId || null,
           notes: `Date of Joining: ${formData.dateOfJoining || 'Not specified'}`,
         };
-        
+
         const response = await fetch(`${API_BASE_URL}/onboarding/requests`, {
           method: 'POST',
           headers: {
@@ -441,7 +440,7 @@ export default function EmployeesPage() {
           lead_id: null,
           status: 'active'
         };
-        
+
         const response = await fetch(`${API_BASE_URL}/users/register`, {
           method: 'POST',
           headers: {
@@ -471,23 +470,23 @@ export default function EmployeesPage() {
 
   const handleUpdateEmployee = async () => {
     if (!editingEmployee) return;
-    
+
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      const updateData = canEditAll 
+      const updateData = canEditAll
         ? {
-            name: formData.name,
-            role: formData.role,
-            department: formData.department,
-            designation: formData.designation,
-            phone: formData.phone,
-            manager_id: formData.managerId || null,
-          }
+          name: formData.name,
+          role: formData.role,
+          department: formData.department,
+          designation: formData.designation,
+          phone: formData.phone,
+          manager_id: formData.managerId || null,
+        }
         : {
-            name: formData.name,
-            phone: formData.phone,
-          };
+          name: formData.name,
+          phone: formData.phone,
+        };
 
       const response = await fetch(`${API_BASE_URL}/users/${editingEmployee.uid}`, {
         method: 'PUT',
@@ -518,7 +517,7 @@ export default function EmployeesPage() {
 
   const handleDeactivateEmployee = async () => {
     if (!deactivatingEmployee) return;
-    
+
     setLoading(true);
     try {
       const token = await user?.getIdToken();
@@ -587,8 +586,8 @@ export default function EmployeesPage() {
   };
 
   const getStatusBadge = (status: string) => {
-    return status === 'active' 
-      ? 'bg-green-100 text-green-800' 
+    return status === 'active'
+      ? 'bg-green-100 text-green-800'
       : 'bg-red-100 text-red-800';
   };
 
@@ -779,7 +778,7 @@ export default function EmployeesPage() {
                           <ChevronLeft className="h-4 w-4" />
                           Previous
                         </Button>
-                        
+
                         {/* Page Numbers */}
                         <div className="flex gap-1">
                           {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
@@ -947,11 +946,10 @@ export default function EmployeesPage() {
                 {myRequests.length > 0 ? (
                   <div className="space-y-4">
                     {myRequests.map((request) => (
-                      <Card key={request.id} className={`border ${
-                        request.status === 'pending' ? 'border-yellow-200 dark:border-yellow-800' :
+                      <Card key={request.id} className={`border ${request.status === 'pending' ? 'border-yellow-200 dark:border-yellow-800' :
                         request.status === 'approved' ? 'border-green-200 dark:border-green-800' :
-                        'border-red-200 dark:border-red-800'
-                      }`}>
+                          'border-red-200 dark:border-red-800'
+                        }`}>
                         <CardContent className="pt-6">
                           <div className="space-y-4">
                             <div className="flex items-start justify-between">
@@ -962,8 +960,8 @@ export default function EmployeesPage() {
                               </div>
                               <Badge className={
                                 request.status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                                request.status === 'approved' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                                'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                  request.status === 'approved' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                                    'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
                               }>
                                 {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
                               </Badge>
@@ -1223,15 +1221,20 @@ export default function EmployeesPage() {
       </Tabs>
 
       {/* Create Employee Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Add New Employee</DialogTitle>
-            <DialogDescription>
-              Create a new employee account. A welcome email will be sent automatically.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
+      <Sheet open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Add New Employee</SheetTitle>
+              <SheetDescription className="mt-1">
+                {userData?.role === 'hr'
+                  ? 'Submit an onboarding request for director approval.'
+                  : 'Create a new employee account. A welcome email will be sent automatically.'}
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6 space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="create-name">Full Name *</Label>
@@ -1328,7 +1331,10 @@ export default function EmployeesPage() {
 
               <div className="space-y-2 col-span-2">
                 <Label htmlFor="create-manager">Reporting Manager</Label>
-                <Select value={formData.managerId} onValueChange={(value) => setFormData({ ...formData, managerId: value === 'none' ? '' : value })}>
+                <Select
+                  value={formData.managerId || 'none'}
+                  onValueChange={(value) => setFormData({ ...formData, managerId: value === 'none' ? '' : value })}
+                >
                   <SelectTrigger id="create-manager">
                     <SelectValue placeholder="Select manager (optional)" />
                   </SelectTrigger>
@@ -1344,38 +1350,39 @@ export default function EmployeesPage() {
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowCreateDialog(false);
-              resetForm();
-            }}>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowCreateDialog(false); resetForm(); }}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleCreateEmployee} 
+            <Button
+              onClick={handleCreateEmployee}
               disabled={loading || !formData.email || !formData.name || !formData.password}
             >
-              {loading ? 'Creating...' : 'Create Employee'}
+              {loading ? 'Creating...' : userData?.role === 'hr' ? 'Submit Request' : 'Create Employee'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Edit Employee Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Employee</DialogTitle>
-            <DialogDescription>
-              Update employee information. Changes will be logged in audit trail.
-            </DialogDescription>
-          </DialogHeader>
+      <Sheet open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Edit Employee</SheetTitle>
+              <SheetDescription className="mt-1">
+                Update employee information. Changes will be logged in audit trail.
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
           {editingEmployee && (
-            <div className="space-y-4 py-4">
-              <div className="p-3 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">Editing:</p>
-                <p className="font-semibold">{editingEmployee.name}</p>
-                <p className="text-sm text-gray-600">{editingEmployee.email}</p>
+            <div className="p-6 space-y-5">
+              <div className="p-4 bg-gray-50 border border-gray-100 rounded-lg">
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Editing</p>
+                <p className="font-semibold text-gray-900 mt-1">{editingEmployee.name}</p>
+                <p className="text-sm text-gray-500">{editingEmployee.email}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1441,7 +1448,10 @@ export default function EmployeesPage() {
 
                     <div className="space-y-2 col-span-2">
                       <Label htmlFor="edit-manager">Reporting Manager</Label>
-                      <Select value={formData.managerId || 'none'} onValueChange={(value) => setFormData({ ...formData, managerId: value === 'none' ? '' : value })}>
+                      <Select
+                        value={formData.managerId || 'none'}
+                        onValueChange={(value) => setFormData({ ...formData, managerId: value === 'none' ? '' : value })}
+                      >
                         <SelectTrigger id="edit-manager">
                           <SelectValue placeholder="Select manager" />
                         </SelectTrigger>
@@ -1460,36 +1470,36 @@ export default function EmployeesPage() {
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowEditDialog(false);
-              setEditingEmployee(null);
-              resetForm();
-            }}>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowEditDialog(false); setEditingEmployee(null); resetForm(); }}>
               Cancel
             </Button>
             <Button onClick={handleUpdateEmployee} disabled={loading}>
               {loading ? 'Saving...' : 'Save Changes'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* View Employee Dialog */}
-      <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Employee Details</DialogTitle>
-          </DialogHeader>
+      <Sheet open={showViewDialog} onOpenChange={setShowViewDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Employee Details</SheetTitle>
+            </SheetHeader>
+          </div>
+
           {viewingEmployee && (
-            <div className="space-y-6 py-4">
+            <div className="p-6 space-y-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold">{viewingEmployee.name}</h2>
-                  <p className="text-gray-600">{viewingEmployee.designation}</p>
-                  <p className="text-gray-500 text-sm">{viewingEmployee.department}</p>
+                  <h2 className="text-xl font-bold text-gray-900">{viewingEmployee.name}</h2>
+                  <p className="text-sm text-gray-600 mt-0.5">{viewingEmployee.designation}</p>
+                  <p className="text-xs text-gray-500">{viewingEmployee.department}</p>
                 </div>
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2 items-end">
                   <Badge className={getRoleBadge(viewingEmployee.role)}>
                     {viewingEmployee.role}
                   </Badge>
@@ -1503,78 +1513,81 @@ export default function EmployeesPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <Mail className="h-4 w-4" />
-                    <span>Email</span>
+                  <div className="flex items-center gap-2 text-xs text-gray-500 uppercase tracking-wide font-medium">
+                    <Mail className="h-3.5 w-3.5" />
+                    Email
                   </div>
-                  <p className="font-medium">{viewingEmployee.email}</p>
+                  <p className="text-sm font-medium text-gray-900 break-all">{viewingEmployee.email}</p>
                 </div>
 
                 {viewingEmployee.phone && (
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Phone className="h-4 w-4" />
-                      <span>Phone</span>
+                    <div className="flex items-center gap-2 text-xs text-gray-500 uppercase tracking-wide font-medium">
+                      <Phone className="h-3.5 w-3.5" />
+                      Phone
                     </div>
-                    <p className="font-medium">{viewingEmployee.phone}</p>
+                    <p className="text-sm font-medium text-gray-900">{viewingEmployee.phone}</p>
                   </div>
                 )}
 
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <Building2 className="h-4 w-4" />
-                    <span>Department</span>
+                  <div className="flex items-center gap-2 text-xs text-gray-500 uppercase tracking-wide font-medium">
+                    <Building2 className="h-3.5 w-3.5" />
+                    Department
                   </div>
-                  <p className="font-medium">{viewingEmployee.department || '-'}</p>
+                  <p className="text-sm font-medium text-gray-900">{viewingEmployee.department || '-'}</p>
                 </div>
 
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <Shield className="h-4 w-4" />
-                    <span>Role</span>
+                  <div className="flex items-center gap-2 text-xs text-gray-500 uppercase tracking-wide font-medium">
+                    <Shield className="h-3.5 w-3.5" />
+                    Role
                   </div>
-                  <p className="font-medium capitalize">{viewingEmployee.role}</p>
+                  <p className="text-sm font-medium text-gray-900 capitalize">{viewingEmployee.role}</p>
                 </div>
 
                 {viewingEmployee.dateOfJoining && (
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Calendar className="h-4 w-4" />
-                      <span>Date of Joining</span>
+                    <div className="flex items-center gap-2 text-xs text-gray-500 uppercase tracking-wide font-medium">
+                      <Calendar className="h-3.5 w-3.5" />
+                      Date of Joining
                     </div>
-                    <p className="font-medium">{new Date(viewingEmployee.dateOfJoining).toLocaleDateString()}</p>
+                    <p className="text-sm font-medium text-gray-900">
+                      {new Date(viewingEmployee.dateOfJoining).toLocaleDateString('en-US', {
+                        year: 'numeric', month: 'short', day: 'numeric'
+                      })}
+                    </p>
                   </div>
                 )}
 
                 {viewingEmployee.managerName && (
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Users className="h-4 w-4" />
-                      <span>Reporting To</span>
+                    <div className="flex items-center gap-2 text-xs text-gray-500 uppercase tracking-wide font-medium">
+                      <Users className="h-3.5 w-3.5" />
+                      Reporting To
                     </div>
-                    <p className="font-medium">{viewingEmployee.managerName}</p>
+                    <p className="text-sm font-medium text-gray-900">{viewingEmployee.managerName}</p>
                   </div>
                 )}
 
                 {viewingEmployee.reporteesCount !== undefined && viewingEmployee.reporteesCount > 0 && (
                   <div className="space-y-1 col-span-2">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Users className="h-4 w-4" />
-                      <span>Team Size</span>
+                    <div className="flex items-center gap-2 text-xs text-gray-500 uppercase tracking-wide font-medium">
+                      <Users className="h-3.5 w-3.5" />
+                      Team Size
                     </div>
-                    <p className="font-medium">{viewingEmployee.reporteesCount} direct reportees</p>
+                    <p className="text-sm font-medium text-gray-900">{viewingEmployee.reporteesCount} direct reportees</p>
                   </div>
                 )}
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button onClick={() => setShowViewDialog(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end">
+            <Button onClick={() => setShowViewDialog(false)}>Close</Button>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Deactivate Confirmation Dialog */}
       <AlertDialog open={showDeactivateDialog} onOpenChange={setShowDeactivateDialog}>
@@ -1582,7 +1595,7 @@ export default function EmployeesPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Deactivate Employee?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to deactivate <strong>{deactivatingEmployee?.name}</strong>? 
+              Are you sure you want to deactivate <strong>{deactivatingEmployee?.name}</strong>?
               This will revoke their access to the system. This action can be reversed by reactivating the employee.
             </AlertDialogDescription>
           </AlertDialogHeader>

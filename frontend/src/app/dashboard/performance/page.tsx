@@ -10,13 +10,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import {
   Select,
   SelectContent,
@@ -37,8 +36,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { 
-  Plus, 
+import {
+  Plus,
   Star,
   TrendingUp,
   Award,
@@ -215,7 +214,7 @@ export default function PerformancePage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      
+
       // Get employee details
       const employee = employees.find(e => e.uid === formData.userId);
       if (!employee) {
@@ -372,11 +371,10 @@ export default function PerformancePage() {
         {[1, 2, 3, 4, 5].map((star) => (
           <Star
             key={star}
-            className={`${starSize} ${
-              star <= rating
+            className={`${starSize} ${star <= rating
                 ? 'fill-yellow-400 text-yellow-400'
                 : 'text-gray-300'
-            }`}
+              }`}
           />
         ))}
       </div>
@@ -758,19 +756,22 @@ export default function PerformancePage() {
       </Tabs>
 
       {/* Create Review Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Add Performance Review</DialogTitle>
-            <DialogDescription>
-              Submit a performance review for a team member
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
+      <Sheet open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Add Performance Review</SheetTitle>
+              <SheetDescription className="mt-1">
+                Submit a performance review for a team member
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6 space-y-5">
             <div className="space-y-2">
               <Label htmlFor="employee">Employee *</Label>
-              <Select 
-                value={formData.userId} 
+              <Select
+                value={formData.userId}
                 onValueChange={(value) => setFormData({ ...formData, userId: value })}
               >
                 <SelectTrigger id="employee">
@@ -792,8 +793,8 @@ export default function PerformancePage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="review-type">Review Type *</Label>
-                <Select 
-                  value={formData.reviewType} 
+                <Select
+                  value={formData.reviewType}
                   onValueChange={(value: any) => setFormData({ ...formData, reviewType: value })}
                 >
                   <SelectTrigger id="review-type">
@@ -866,31 +867,32 @@ export default function PerformancePage() {
               </div>
             )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowCreateDialog(false);
-              resetForm();
-            }}>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowCreateDialog(false); resetForm(); }}>
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleCreateReview}
               disabled={loading || !formData.userId || !formData.context}
             >
               {loading ? 'Submitting...' : 'Submit Review'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* View Review Dialog */}
-      <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Performance Review Details</DialogTitle>
-          </DialogHeader>
+      <Sheet open={showViewDialog} onOpenChange={setShowViewDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Performance Review Details</SheetTitle>
+            </SheetHeader>
+          </div>
+
           {viewingReview && (
-            <div className="space-y-4 py-4">
+            <div className="p-6 space-y-5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-12 w-12">
@@ -900,7 +902,7 @@ export default function PerformancePage() {
                   </Avatar>
                   <div>
                     <h3 className="font-semibold text-lg">{viewingReview.userName}</h3>
-                    <p className="text-sm text-gray-600">{viewingReview.designation} • {viewingReview.department}</p>
+                    <p className="text-sm text-gray-500">{viewingReview.designation} • {viewingReview.department}</p>
                   </div>
                 </div>
                 <Badge className={getStatusBadge(viewingReview.status)}>
@@ -911,37 +913,39 @@ export default function PerformancePage() {
               <Separator />
 
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-600 mb-2">Review Type</p>
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Review Type</p>
                   <div className="flex items-center gap-2">
                     {getReviewTypeIcon(viewingReview.reviewType)}
                     <span className="capitalize font-medium">{viewingReview.reviewType}</span>
                   </div>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600 mb-2">Rating</p>
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Rating</p>
                   {renderStars(viewingReview.rating, 'md')}
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600 mb-2">Reviewer</p>
-                  <p className="font-medium">{viewingReview.reviewerName}</p>
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Reviewer</p>
+                  <p className="font-medium text-sm">{viewingReview.reviewerName}</p>
                   <p className="text-xs text-gray-500 capitalize">{viewingReview.reviewerRole}</p>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-600 mb-2">Review Date</p>
-                  <p className="font-medium">{format(new Date(viewingReview.reviewDate), 'MMMM dd, yyyy')}</p>
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Review Date</p>
+                  <p className="font-medium text-sm">{format(new Date(viewingReview.reviewDate), 'MMMM dd, yyyy')}</p>
                 </div>
               </div>
 
               <Separator />
 
-              <div>
-                <p className="text-sm text-gray-600 mb-2">Context</p>
-                <p className="text-gray-800 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">{viewingReview.context}</p>
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500 uppercase tracking-wide">Context</p>
+                <p className="text-gray-800 bg-gray-50 border border-gray-100 p-4 rounded-lg whitespace-pre-wrap text-sm leading-relaxed">
+                  {viewingReview.context}
+                </p>
               </div>
 
               {viewingReview.status === 'approved' && viewingReview.approverName && (
-                <div className="p-3 bg-green-50 rounded-lg">
+                <div className="p-4 bg-green-50 border border-green-100 rounded-lg">
                   <p className="text-sm text-green-900">
                     Approved by <strong>{viewingReview.approverName}</strong>
                     {viewingReview.approvalDate && ` on ${format(new Date(viewingReview.approvalDate), 'MMM dd, yyyy')}`}
@@ -950,94 +954,102 @@ export default function PerformancePage() {
               )}
             </div>
           )}
-          <DialogFooter>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end">
             <Button onClick={() => setShowViewDialog(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Approve Dialog */}
-      <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Approve Performance Review</DialogTitle>
-            <DialogDescription>
-              Confirm approval for this performance review
-            </DialogDescription>
-          </DialogHeader>
-          {processingReview && (
-            <div className="py-4">
-              <div className="p-4 bg-green-50 rounded-lg space-y-2">
-                <p className="font-semibold">{processingReview.userName}</p>
-                <div className="flex items-center gap-2">
+      <Sheet open={showApproveDialog} onOpenChange={setShowApproveDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Approve Performance Review</SheetTitle>
+              <SheetDescription className="mt-1">
+                Confirm approval for this performance review
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6">
+            {processingReview && (
+              <div className="p-4 bg-green-50 border border-green-100 rounded-lg space-y-2">
+                <p className="font-semibold text-gray-900">{processingReview.userName}</p>
+                <div className="flex items-center gap-2 text-sm text-gray-600">
                   {getReviewTypeIcon(processingReview.reviewType)}
                   <span className="capitalize">{processingReview.reviewType} Review</span>
-                  <span className="mx-2">•</span>
+                  <span className="mx-1">•</span>
                   {renderStars(processingReview.rating)}
                 </div>
-                <p className="text-sm text-gray-600">By {processingReview.reviewerName}</p>
+                <p className="text-sm text-gray-500">By {processingReview.reviewerName}</p>
               </div>
-            </div>
-          )}
-          <DialogFooter>
+            )}
+          </div>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
             <Button variant="outline" onClick={() => setShowApproveDialog(false)}>
               Cancel
             </Button>
             <Button onClick={handleApproveReview} disabled={loading} className="bg-green-600 hover:bg-green-700">
               {loading ? 'Approving...' : 'Approve Review'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Reject Dialog */}
-      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reject Performance Review</DialogTitle>
-            <DialogDescription>
-              Provide a reason for rejection
-            </DialogDescription>
-          </DialogHeader>
-          {processingReview && (
-            <div className="space-y-4 py-4">
-              <div className="p-4 bg-red-50 rounded-lg space-y-2">
-                <p className="font-semibold">{processingReview.userName}</p>
-                <div className="flex items-center gap-2">
-                  {getReviewTypeIcon(processingReview.reviewType)}
-                  <span className="capitalize">{processingReview.reviewType} Review</span>
-                </div>
-              </div>
+      <Sheet open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Reject Performance Review</SheetTitle>
+              <SheetDescription className="mt-1">
+                Provide a reason for rejection
+              </SheetDescription>
+            </SheetHeader>
+          </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="rejection-reason">Reason for Rejection *</Label>
-                <Textarea
-                  id="rejection-reason"
-                  placeholder="Please provide a reason..."
-                  value={rejectionReason}
-                  onChange={(e) => setRejectionReason(e.target.value)}
-                  rows={4}
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowRejectDialog(false);
-              setRejectionReason('');
-            }}>
+          <div className="p-6 space-y-5">
+            {processingReview && (
+              <>
+                <div className="p-4 bg-red-50 border border-red-100 rounded-lg space-y-2">
+                  <p className="font-semibold text-gray-900">{processingReview.userName}</p>
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    {getReviewTypeIcon(processingReview.reviewType)}
+                    <span className="capitalize">{processingReview.reviewType} Review</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="rejection-reason">Reason for Rejection *</Label>
+                  <Textarea
+                    id="rejection-reason"
+                    placeholder="Please provide a reason..."
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    rows={4}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowRejectDialog(false); setRejectionReason(''); }}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleRejectReview} 
+            <Button
+              onClick={handleRejectReview}
               disabled={loading || !rejectionReason}
               className="bg-red-600 hover:bg-red-700"
             >
               {loading ? 'Rejecting...' : 'Reject Review'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

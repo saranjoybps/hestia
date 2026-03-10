@@ -10,13 +10,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import {
   Select,
   SelectContent,
@@ -28,8 +27,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { 
-  Plus, 
+import {
+  Plus,
   Calendar as CalendarIcon,
   User,
   Paperclip,
@@ -150,7 +149,7 @@ export default function TasksPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      
+
       // Get assignee details
       const assignee = employees.find(e => e.uid === formData.assigneeId);
       if (!assignee) {
@@ -196,7 +195,7 @@ export default function TasksPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      
+
       // Get assignee details if changed
       let updateData: any = { ...formData };
       if (formData.assigneeId !== editingTask.assigneeId) {
@@ -364,7 +363,7 @@ export default function TasksPage() {
   };
 
   const TaskCard = ({ task }: { task: Task }) => (
-    <Card 
+    <Card
       className={`cursor-move hover:shadow-md transition-shadow ${getPriorityCardColor(task.priority)} mb-3`}
       draggable
       onDragStart={() => handleDragStart(task)}
@@ -473,9 +472,9 @@ export default function TasksPage() {
         {columns.map((column) => {
           const columnTasks = getTasksByStatus(column.id);
           const Icon = column.icon;
-          
+
           return (
-            <div 
+            <div
               key={column.id}
               className="flex flex-col"
             >
@@ -491,7 +490,7 @@ export default function TasksPage() {
                     </Badge>
                   </CardTitle>
                 </CardHeader>
-                <CardContent 
+                <CardContent
                   className="min-h-[400px] max-h-[calc(100vh-300px)] overflow-y-auto"
                   onDragOver={handleDragOver}
                   onDrop={() => handleDrop(column.id)}
@@ -514,53 +513,34 @@ export default function TasksPage() {
       </div>
 
       {/* Create/Edit Task Dialog */}
-      <Dialog open={showCreateDialog || showEditDialog} onOpenChange={(open) => {
-        if (!open) {
-          setShowCreateDialog(false);
-          setShowEditDialog(false);
-          setEditingTask(null);
-          resetForm();
-        }
+      <Sheet open={showCreateDialog || showEditDialog} onOpenChange={(open) => {
+        if (!open) { setShowCreateDialog(false); setShowEditDialog(false); setEditingTask(null); resetForm(); }
       }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingTask ? 'Edit Task' : 'Create New Task'}</DialogTitle>
-            <DialogDescription>
-              {editingTask ? 'Update task details' : 'Create a new task and assign it to a team member'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">{editingTask ? 'Edit Task' : 'Create New Task'}</SheetTitle>
+              <SheetDescription className="mt-1">
+                {editingTask ? 'Update task details' : 'Create a new task and assign it to a team member'}
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+          <div className="p-6 space-y-5">
             <div className="space-y-2">
               <Label htmlFor="title">Title *</Label>
-              <Input
-                id="title"
-                placeholder="Task title..."
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              />
+              <Input id="title" placeholder="Task title..." value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })} />
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                placeholder="Task description..."
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                rows={4}
-              />
+              <Textarea id="description" placeholder="Task description..." value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })} rows={4} />
             </div>
-
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="assignee">Assignee *</Label>
-                <Select 
-                  value={formData.assigneeId} 
-                  onValueChange={(value) => setFormData({ ...formData, assigneeId: value })}
-                >
-                  <SelectTrigger id="assignee">
-                    <SelectValue placeholder="Select assignee" />
-                  </SelectTrigger>
+                <Select value={formData.assigneeId} onValueChange={(value) => setFormData({ ...formData, assigneeId: value })}>
+                  <SelectTrigger id="assignee"><SelectValue placeholder="Select assignee" /></SelectTrigger>
                   <SelectContent>
                     {employees.map((emp) => (
                       <SelectItem key={emp.uid} value={emp.uid}>
@@ -573,130 +553,73 @@ export default function TasksPage() {
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="due-date">Due Date</Label>
-                <Input
-                  id="due-date"
-                  type="date"
-                  value={formData.dueDate}
+                <Input id="due-date" type="date" value={formData.dueDate}
                   onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-                  min={format(new Date(), 'yyyy-MM-dd')}
-                />
+                  min={format(new Date(), 'yyyy-MM-dd')} />
               </div>
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="priority">Priority *</Label>
-              <Select 
-                value={formData.priority} 
-                onValueChange={(value: any) => setFormData({ ...formData, priority: value })}
-              >
-                <SelectTrigger id="priority">
-                  <SelectValue />
-                </SelectTrigger>
+              <Select value={formData.priority} onValueChange={(value: any) => setFormData({ ...formData, priority: value })}>
+                <SelectTrigger id="priority"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="low">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-gray-400"></div>
-                      Low
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="medium">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                      Medium
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="high">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-orange-500"></div>
-                      High
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="urgent">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                      Urgent
-                    </div>
-                  </SelectItem>
+                  <SelectItem value="low"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-gray-400" />Low</div></SelectItem>
+                  <SelectItem value="medium"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-500" />Medium</div></SelectItem>
+                  <SelectItem value="high"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-orange-500" />High</div></SelectItem>
+                  <SelectItem value="urgent"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-500" />Urgent</div></SelectItem>
                 </SelectContent>
               </Select>
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="attachments">Attachments</Label>
-              <Input
-                id="attachments"
-                type="text"
-                placeholder="Add attachment URLs (comma-separated)"
+              <Input id="attachments" type="text" placeholder="Add attachment URLs (comma-separated)"
                 value={formData.attachments.join(', ')}
-                onChange={(e) => setFormData({ 
-                  ...formData, 
-                  attachments: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                })}
-              />
+                onChange={(e) => setFormData({ ...formData, attachments: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} />
               <p className="text-xs text-gray-500">Enter attachment URLs separated by commas</p>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowCreateDialog(false);
-              setShowEditDialog(false);
-              setEditingTask(null);
-              resetForm();
-            }}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={editingTask ? handleUpdateTask : handleCreateTask}
-              disabled={loading || !formData.title || !formData.assigneeId}
-            >
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowCreateDialog(false); setShowEditDialog(false); setEditingTask(null); resetForm(); }}>Cancel</Button>
+            <Button onClick={editingTask ? handleUpdateTask : handleCreateTask} disabled={loading || !formData.title || !formData.assigneeId}>
               {loading ? 'Saving...' : editingTask ? 'Update Task' : 'Create Task'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* View Task Dialog */}
-      <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {viewingTask?.title}
-            </DialogTitle>
-          </DialogHeader>
-          {viewingTask && (
-            <div className="space-y-4 py-4">
-              <div className="flex gap-2">
-                <Badge className={getPriorityColor(viewingTask.priority)}>
-                  {viewingTask.priority.toUpperCase()}
-                </Badge>
-                <Badge variant="outline">
-                  {viewingTask.status.replace('_', ' ').toUpperCase()}
-                </Badge>
-              </div>
-
-              {viewingTask.description && (
-                <>
-                  <Separator />
-                  <div>
-                    <h4 className="font-semibold text-sm mb-2">Description</h4>
-                    <p className="text-gray-800 whitespace-pre-wrap">{viewingTask.description}</p>
-                  </div>
-                </>
+      <Sheet open={showViewDialog} onOpenChange={setShowViewDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">{viewingTask?.title}</SheetTitle>
+              {viewingTask && (
+                <div className="flex gap-2 mt-2">
+                  <Badge className={getPriorityColor(viewingTask.priority)}>{viewingTask.priority.toUpperCase()}</Badge>
+                  <Badge variant="outline">{viewingTask.status.replace('_', ' ').toUpperCase()}</Badge>
+                </div>
               )}
-
+            </SheetHeader>
+          </div>
+          {viewingTask && (
+            <div className="p-6 space-y-5">
+              {viewingTask.description && (
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Description</p>
+                  <p className="text-gray-800 whitespace-pre-wrap bg-gray-50 border border-gray-100 p-3 rounded-lg text-sm leading-relaxed">
+                    {viewingTask.description}
+                  </p>
+                </div>
+              )}
               <Separator />
-
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h4 className="font-semibold text-sm mb-2">Assignee</h4>
-                  <div className="flex items-center gap-2">
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Assignee</p>
+                  <div className="flex items-center gap-2 mt-1">
                     <Avatar className="h-8 w-8">
-                      <AvatarFallback className="text-xs">
-                        {viewingTask.assigneeName.split(' ').map(n => n[0]).join('')}
-                      </AvatarFallback>
+                      <AvatarFallback className="text-xs">{viewingTask.assigneeName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
                     </Avatar>
                     <div>
                       <p className="text-sm font-medium">{viewingTask.assigneeName}</p>
@@ -704,56 +627,38 @@ export default function TasksPage() {
                     </div>
                   </div>
                 </div>
-
-                <div>
-                  <h4 className="font-semibold text-sm mb-2">Created By</h4>
-                  <div className="flex items-center gap-2">
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Created By</p>
+                  <div className="flex items-center gap-2 mt-1">
                     <Avatar className="h-8 w-8">
-                      <AvatarFallback className="text-xs">
-                        {viewingTask.createdByName.split(' ').map(n => n[0]).join('')}
-                      </AvatarFallback>
+                      <AvatarFallback className="text-xs">{viewingTask.createdByName.split(' ').map(n => n[0]).join('')}</AvatarFallback>
                     </Avatar>
-                    <div>
-                      <p className="text-sm font-medium">{viewingTask.createdByName}</p>
-                    </div>
+                    <p className="text-sm font-medium">{viewingTask.createdByName}</p>
                   </div>
                 </div>
-
                 {viewingTask.dueDate && (
-                  <div>
-                    <h4 className="font-semibold text-sm mb-2">Due Date</h4>
-                    <div className={`flex items-center gap-2 ${isOverdue(viewingTask.dueDate) ? 'text-red-600' : 'text-gray-700'}`}>
+                  <div className="space-y-1">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Due Date</p>
+                    <div className={`flex items-center gap-2 mt-1 text-sm ${isOverdue(viewingTask.dueDate) ? 'text-red-600 font-semibold' : 'text-gray-700'}`}>
                       <CalendarIcon className="h-4 w-4" />
-                      <span className="text-sm">
-                        {format(parseISO(viewingTask.dueDate), 'MMMM dd, yyyy')}
-                        {isOverdue(viewingTask.dueDate) && ' (Overdue)'}
-                      </span>
+                      <span>{format(parseISO(viewingTask.dueDate), 'MMMM dd, yyyy')}{isOverdue(viewingTask.dueDate) && ' (Overdue)'}</span>
                     </div>
                   </div>
                 )}
-
-                <div>
-                  <h4 className="font-semibold text-sm mb-2">Created</h4>
-                  <p className="text-sm text-gray-700">
-                    {format(new Date(viewingTask.createdAt), 'MMM dd, yyyy HH:mm')}
-                  </p>
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Created</p>
+                  <p className="text-sm text-gray-700 mt-1">{format(new Date(viewingTask.createdAt), 'MMM dd, yyyy HH:mm')}</p>
                 </div>
               </div>
-
               {viewingTask.attachments.length > 0 && (
                 <>
                   <Separator />
-                  <div>
-                    <h4 className="font-semibold text-sm mb-2">Attachments</h4>
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Attachments</p>
                     <div className="space-y-2">
                       {viewingTask.attachments.map((attachment, index) => (
-                        <a
-                          key={index}
-                          href={attachment}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800"
-                        >
+                        <a key={index} href={attachment} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800">
                           <Paperclip className="h-3 w-3" />
                           {attachment}
                         </a>
@@ -762,56 +667,44 @@ export default function TasksPage() {
                   </div>
                 </>
               )}
-
               {viewingTask.updatedAt && (
-                <div className="text-xs text-gray-500">
-                  Last updated: {format(new Date(viewingTask.updatedAt), 'MMM dd, yyyy HH:mm')}
-                </div>
+                <p className="text-xs text-gray-400">Last updated: {format(new Date(viewingTask.updatedAt), 'MMM dd, yyyy HH:mm')}</p>
               )}
             </div>
           )}
-          <DialogFooter>
+          <div className="p-6 border-t bg-gray-50 flex justify-end">
             <Button onClick={() => setShowViewDialog(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Task</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this task? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
+      <Sheet open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Delete Task</SheetTitle>
+              <SheetDescription className="mt-1">
+                Are you sure you want to delete this task? This action cannot be undone.
+              </SheetDescription>
+            </SheetHeader>
+          </div>
           {deletingTask && (
-            <div className="py-4">
-              <div className="p-4 bg-red-50 rounded-lg">
-                <p className="font-semibold">{deletingTask.title}</p>
-                <p className="text-sm text-gray-600 mt-1">
-                  Assigned to {deletingTask.assigneeName}
-                </p>
+            <div className="p-6">
+              <div className="p-4 bg-red-50 border border-red-100 rounded-lg space-y-1">
+                <p className="font-semibold text-gray-900">{deletingTask.title}</p>
+                <p className="text-sm text-gray-600">Assigned to {deletingTask.assigneeName}</p>
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowDeleteDialog(false);
-              setDeletingTask(null);
-            }}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleDeleteTask} 
-              disabled={loading}
-              className="bg-red-600 hover:bg-red-700"
-            >
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowDeleteDialog(false); setDeletingTask(null); }}>Cancel</Button>
+            <Button onClick={handleDeleteTask} disabled={loading} className="bg-red-600 hover:bg-red-700">
               {loading ? 'Deleting...' : 'Delete Task'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

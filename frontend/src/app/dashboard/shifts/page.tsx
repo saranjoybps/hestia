@@ -18,13 +18,12 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import {
   Select,
   SelectContent,
@@ -47,10 +46,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { 
-  Clock, 
-  Plus, 
-  Edit, 
+import {
+  Clock,
+  Plus,
+  Edit,
   Trash2,
   Calendar,
   Users,
@@ -107,13 +106,13 @@ export default function ShiftsPage() {
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'approved' | 'pending' | 'rejected'>('all');
-  
+
   // Dialogs
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showBulkDialog, setShowBulkDialog] = useState(false);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
-  
+
   // Form data
   const [formData, setFormData] = useState<ShiftFormData>({
     employee_id: '',
@@ -165,7 +164,7 @@ export default function ShiftsPage() {
       if (response.ok) {
         const data = await response.json();
         const users = data.users || data;
-        
+
         // Filter to get reportees based on role
         let filteredUsers: Employee[] = [];
         if (userData?.role === 'lead') {
@@ -173,7 +172,7 @@ export default function ShiftsPage() {
         } else if (userData?.role === 'manager' || userData?.role === 'director') {
           filteredUsers = users.filter((u: Employee) => u.uid !== userData.uid);
         }
-        
+
         setReportees(filteredUsers);
       }
     } catch (error) {
@@ -191,7 +190,7 @@ export default function ShiftsPage() {
       if (response.ok) {
         const data = await response.json();
         const shiftsList = data.shifts || [];
-        
+
         if (userData?.role === 'employee') {
           setMyShifts(shiftsList);
         } else {
@@ -229,7 +228,7 @@ export default function ShiftsPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      
+
       const response = await fetch(`${API_BASE_URL}/shifts`, {
         method: 'POST',
         headers: {
@@ -248,6 +247,9 @@ export default function ShiftsPage() {
       setShowCreateDialog(false);
       resetForm();
       fetchShifts();
+      if (canApprove) {
+        fetchPendingApprovals();
+      }
     } catch (error) {
       console.error('Create shift error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to create shift');
@@ -281,12 +283,12 @@ export default function ShiftsPage() {
     try {
       const token = await user?.getIdToken();
       const shiftsToCreate = [];
-      
+
       // Generate shifts for each day in the range
       const currentDate = new Date(startDate);
       while (currentDate <= endDate) {
         const dayOfWeek = currentDate.getDay();
-        
+
         // Skip if this day is marked as a weekoff
         if (bulkFormData.weekoff_days.includes(dayOfWeek)) {
           currentDate.setDate(currentDate.getDate() + 1);
@@ -308,7 +310,7 @@ export default function ShiftsPage() {
       // Create all shifts
       let successCount = 0;
       let failCount = 0;
-      
+
       for (const shiftData of shiftsToCreate) {
         try {
           const response = await fetch(`${API_BASE_URL}/shifts`, {
@@ -339,6 +341,9 @@ export default function ShiftsPage() {
       setShowBulkDialog(false);
       resetBulkForm();
       fetchShifts();
+      if (canApprove) {
+        fetchPendingApprovals();
+      }
     } catch (error) {
       console.error('Bulk create shifts error:', error);
       toast.error('Failed to create bulk shifts');
@@ -353,7 +358,7 @@ export default function ShiftsPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      
+
       const response = await fetch(`${API_BASE_URL}/shifts/${editingShift.id}`, {
         method: 'PATCH',
         headers: {
@@ -385,7 +390,7 @@ export default function ShiftsPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      
+
       const response = await fetch(`${API_BASE_URL}/shifts/${shiftId}/approve`, {
         method: 'PATCH',
         headers: {
@@ -414,7 +419,7 @@ export default function ShiftsPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      
+
       const response = await fetch(`${API_BASE_URL}/shifts/${shiftId}/reject`, {
         method: 'PATCH',
         headers: {
@@ -444,7 +449,7 @@ export default function ShiftsPage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
-      
+
       const response = await fetch(`${API_BASE_URL}/shifts/${shiftId}`, {
         method: 'DELETE',
         headers: {
@@ -512,7 +517,7 @@ export default function ShiftsPage() {
       night: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
       rotating: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
     };
-    
+
     return <Badge className={colors[type] || ''}>{type.charAt(0).toUpperCase() + type.slice(1)}</Badge>;
   };
 
@@ -522,12 +527,12 @@ export default function ShiftsPage() {
       approved: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
       rejected: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
     };
-    
+
     return <Badge className={colors[status] || ''}>{status.charAt(0).toUpperCase() + status.slice(1)}</Badge>;
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -551,7 +556,15 @@ export default function ShiftsPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue={userData?.role === 'employee' ? 'my-shifts' : 'all-shifts'} className="space-y-4">
+      <Tabs defaultValue={userData?.role === 'employee' ? 'my-shifts' : 'all-shifts'} onValueChange={(value) => {
+        if (value === 'pending' && canApprove) {
+          fetchPendingApprovals();
+        } else if (value === 'all-shifts') {
+          fetchShifts();
+        } else if (value === 'my-shifts') {
+          fetchShifts();
+        }
+      }} className="space-y-4">
         <TabsList>
           {userData?.role === 'employee' ? (
             <TabsTrigger value="my-shifts">My Shifts</TabsTrigger>
@@ -569,10 +582,6 @@ export default function ShiftsPage() {
         {userData?.role !== 'employee' && (
           <TabsContent value="all-shifts" className="space-y-4">
             <Card>
-              <CardHeader>
-                <CardTitle>All Shifts</CardTitle>
-                <CardDescription>View and manage all shift allocations</CardDescription>
-              </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-4 mb-4">
                   <div>
@@ -641,67 +650,67 @@ export default function ShiftsPage() {
                           return true;
                         })
                         .map((shift) => (
-                        <TableRow key={shift.id}>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{shift.employee_name}</div>
-                              <div className="text-sm text-gray-500">{shift.employee_email}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {new Date(shift.shift_date).toLocaleDateString()}
-                          </TableCell>
-                          <TableCell>{getShiftTypeBadge(shift.shift_type)}</TableCell>
-                          <TableCell>
-                            <div className="text-sm">
-                              {shift.start_time} - {shift.end_time}
-                            </div>
-                          </TableCell>
-                          <TableCell>{getStatusBadge(shift.status)}</TableCell>
-                          <TableCell>
-                            <div className="text-sm">{shift.created_by_name || 'Unknown'}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              {shift.status === 'pending' && shift.created_by === userData?.uid && (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => openEditDialog(shift)}
-                                  >
-                                    <Edit className="h-4 w-4" />
-                                  </Button>
-                                  <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                      <Button size="sm" variant="outline" className="text-red-600">
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                      <AlertDialogHeader>
-                                        <AlertDialogTitle>Delete Shift</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                          Are you sure you want to delete this shift allocation?
-                                        </AlertDialogDescription>
-                                      </AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction
-                                          className="bg-red-600 hover:bg-red-700"
-                                          onClick={() => handleDeleteShift(shift.id)}
-                                        >
-                                          Delete
-                                        </AlertDialogAction>
-                                      </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                  </AlertDialog>
-                                </>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                          <TableRow key={shift.id}>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{shift.employee_name}</div>
+                                <div className="text-sm text-gray-500">{shift.employee_email}</div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {new Date(shift.shift_date).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell>{getShiftTypeBadge(shift.shift_type)}</TableCell>
+                            <TableCell>
+                              <div className="text-sm">
+                                {shift.start_time} - {shift.end_time}
+                              </div>
+                            </TableCell>
+                            <TableCell>{getStatusBadge(shift.status)}</TableCell>
+                            <TableCell>
+                              <div className="text-sm">{shift.created_by_name || 'Unknown'}</div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                {shift.status === 'pending' && shift.created_by === userData?.uid && (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => openEditDialog(shift)}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <Button size="sm" variant="outline" className="text-red-600">
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Delete Shift</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            Are you sure you want to delete this shift allocation?
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                          <AlertDialogAction
+                                            className="bg-red-600 hover:bg-red-700"
+                                            onClick={() => handleDeleteShift(shift.id)}
+                                          >
+                                            Delete
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  </>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
                     </TableBody>
                   </Table>
                 ) : (
@@ -734,11 +743,11 @@ export default function ShiftsPage() {
                               <div className="flex gap-2 items-center mb-2">
                                 <Calendar className="h-4 w-4 text-gray-500" />
                                 <span className="font-semibold">
-                                  {new Date(shift.shift_date).toLocaleDateString('en-US', { 
-                                    weekday: 'long', 
-                                    year: 'numeric', 
-                                    month: 'long', 
-                                    day: 'numeric' 
+                                  {new Date(shift.shift_date).toLocaleDateString('en-US', {
+                                    weekday: 'long',
+                                    year: 'numeric',
+                                    month: 'long',
+                                    day: 'numeric'
                                   })}
                                 </span>
                               </div>
@@ -927,15 +936,18 @@ export default function ShiftsPage() {
       </Tabs>
 
       {/* Create Shift Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Create New Shift</DialogTitle>
-            <DialogDescription>
-              Allocate a shift to an employee. It will require manager/director approval.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
+      <Sheet open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Create New Shift</SheetTitle>
+              <SheetDescription className="mt-1">
+                Allocate a shift to an employee. It will require manager/director approval.
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6 space-y-5">
             <div className="space-y-2">
               <Label htmlFor="employee">Employee *</Label>
               <Select value={formData.employee_id} onValueChange={(value) => setFormData({ ...formData, employee_id: value })}>
@@ -1012,27 +1024,31 @@ export default function ShiftsPage() {
               />
             </div>
           </div>
-          <DialogFooter>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
             <Button variant="outline" onClick={() => { setShowCreateDialog(false); resetForm(); }}>
               Cancel
             </Button>
             <Button onClick={handleCreateShift} disabled={loading}>
-              Create Shift
+              {loading ? 'Creating...' : 'Create Shift'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Bulk Allocate Shifts Dialog */}
-      <Dialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Bulk Allocate Shifts</DialogTitle>
-            <DialogDescription>
-              Allocate shifts for an employee across multiple days. Maximum 31 days at a time.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
+      <Sheet open={showBulkDialog} onOpenChange={setShowBulkDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Bulk Allocate Shifts</SheetTitle>
+              <SheetDescription className="mt-1">
+                Allocate shifts for an employee across multiple days. Maximum 31 days at a time.
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6 space-y-5">
             <div className="space-y-2">
               <Label htmlFor="bulk-employee">Employee *</Label>
               <Select value={bulkFormData.employee_id} onValueChange={(value) => setBulkFormData({ ...bulkFormData, employee_id: value })}>
@@ -1049,28 +1065,26 @@ export default function ShiftsPage() {
               </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="bulk-shift_type">Shift Type *</Label>
-                <Select value={bulkFormData.shift_type} onValueChange={(value: any) => setBulkFormData({ ...bulkFormData, shift_type: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="morning">Morning</SelectItem>
-                    <SelectItem value="afternoon">Afternoon</SelectItem>
-                    <SelectItem value="evening">Evening</SelectItem>
-                    <SelectItem value="night">Night</SelectItem>
-                    <SelectItem value="rotating">Rotating</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="bulk-shift_type">Shift Type *</Label>
+              <Select value={bulkFormData.shift_type} onValueChange={(value: any) => setBulkFormData({ ...bulkFormData, shift_type: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="morning">Morning</SelectItem>
+                  <SelectItem value="afternoon">Afternoon</SelectItem>
+                  <SelectItem value="evening">Evening</SelectItem>
+                  <SelectItem value="night">Night</SelectItem>
+                  <SelectItem value="rotating">Rotating</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
               <Label>Weekoff Days (Optional)</Label>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                Select days to exclude from shift allocation. Leave empty to include all days.
+              <p className="text-xs text-gray-500 mb-2">
+                Select days to exclude from shift allocation.
               </p>
               <div className="grid grid-cols-4 gap-2">
                 {[
@@ -1087,8 +1101,8 @@ export default function ShiftsPage() {
                     className={cn(
                       "flex items-center justify-center p-2 rounded-md border cursor-pointer transition-colors",
                       bulkFormData.weekoff_days.includes(day.value)
-                        ? "bg-blue-100 dark:bg-blue-900 border-blue-500 dark:border-blue-400 text-blue-700 dark:text-blue-200"
-                        : "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500"
+                        ? "bg-blue-100 border-blue-500 text-blue-700"
+                        : "bg-white border-gray-300 hover:border-gray-400"
                     )}
                   >
                     <input
@@ -1097,15 +1111,9 @@ export default function ShiftsPage() {
                       checked={bulkFormData.weekoff_days.includes(day.value)}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setBulkFormData({
-                            ...bulkFormData,
-                            weekoff_days: [...bulkFormData.weekoff_days, day.value].sort(),
-                          });
+                          setBulkFormData({ ...bulkFormData, weekoff_days: [...bulkFormData.weekoff_days, day.value].sort() });
                         } else {
-                          setBulkFormData({
-                            ...bulkFormData,
-                            weekoff_days: bulkFormData.weekoff_days.filter((d) => d !== day.value),
-                          });
+                          setBulkFormData({ ...bulkFormData, weekoff_days: bulkFormData.weekoff_days.filter((d) => d !== day.value) });
                         }
                       }}
                     />
@@ -1114,20 +1122,10 @@ export default function ShiftsPage() {
                 ))}
               </div>
               <div className="flex gap-2 mt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setBulkFormData({ ...bulkFormData, weekoff_days: [0, 6] })}
-                >
+                <Button type="button" variant="outline" size="sm" onClick={() => setBulkFormData({ ...bulkFormData, weekoff_days: [0, 6] })}>
                   Weekend Only
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setBulkFormData({ ...bulkFormData, weekoff_days: [] })}
-                >
+                <Button type="button" variant="outline" size="sm" onClick={() => setBulkFormData({ ...bulkFormData, weekoff_days: [] })}>
                   Clear All
                 </Button>
               </div>
@@ -1143,7 +1141,6 @@ export default function ShiftsPage() {
                   onChange={(e) => setBulkFormData({ ...bulkFormData, start_date: e.target.value })}
                 />
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="bulk-end_date">End Date *</Label>
                 <Input
@@ -1165,7 +1162,6 @@ export default function ShiftsPage() {
                   onChange={(e) => setBulkFormData({ ...bulkFormData, start_time: e.target.value })}
                 />
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="bulk-end_time">End Time *</Label>
                 <Input
@@ -1188,44 +1184,41 @@ export default function ShiftsPage() {
             </div>
 
             {bulkFormData.start_date && bulkFormData.end_date && (
-              <div className="p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
-                <p className="text-sm text-blue-800 dark:text-blue-200">
-                  This will create shifts from {bulkFormData.start_date} to {bulkFormData.end_date}
+              <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  Shifts from <strong>{bulkFormData.start_date}</strong> to <strong>{bulkFormData.end_date}</strong>
                   {bulkFormData.weekoff_days.length > 0 && (
-                    <span>
-                      {' '}(excluding{' '}
-                      {bulkFormData.weekoff_days
-                        .map((d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d])
-                        .join(', ')}
-                      )
-                    </span>
-                  )}
-                  .
+                    <span> (excluding {bulkFormData.weekoff_days.map((d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')})</span>
+                  )}.
                 </p>
               </div>
             )}
           </div>
-          <DialogFooter>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
             <Button variant="outline" onClick={() => { setShowBulkDialog(false); resetBulkForm(); }}>
               Cancel
             </Button>
             <Button onClick={handleBulkCreateShifts} disabled={loading}>
               {loading ? 'Creating...' : 'Allocate Shifts'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Edit Shift Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Edit Shift</DialogTitle>
-            <DialogDescription>
-              Update shift details. Only pending shifts can be edited.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
+      <Sheet open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Edit Shift</SheetTitle>
+              <SheetDescription className="mt-1">
+                Update shift details. Only pending shifts can be edited.
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6 space-y-5">
             <div className="space-y-2">
               <Label htmlFor="edit-shift_type">Shift Type *</Label>
               <Select value={formData.shift_type} onValueChange={(value: any) => setFormData({ ...formData, shift_type: value })}>
@@ -1262,7 +1255,6 @@ export default function ShiftsPage() {
                   onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
                 />
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="edit-end_time">End Time *</Label>
                 <Input
@@ -1284,16 +1276,17 @@ export default function ShiftsPage() {
               />
             </div>
           </div>
-          <DialogFooter>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
             <Button variant="outline" onClick={() => { setShowEditDialog(false); setEditingShift(null); resetForm(); }}>
               Cancel
             </Button>
             <Button onClick={handleUpdateShift} disabled={loading}>
-              Update Shift
+              {loading ? 'Updating...' : 'Update Shift'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

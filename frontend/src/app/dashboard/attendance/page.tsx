@@ -17,13 +17,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetFooter,
+} from '@/components/ui/sheet';
 import {
   Select,
   SelectContent,
@@ -73,7 +73,7 @@ const fromApiStatus = (status: string): AttendanceRecord['status'] => {
     case 'half_day':
       return 'half-day';
     case 'leave':
-      return 'on-leave'; // default mapping for any leave-type
+      return 'on-leave';
     default:
       return status as AttendanceRecord['status'];
   }
@@ -91,6 +91,7 @@ interface AttendanceRecord {
   notes: string;
   markedBy?: string;
   correctedBy?: string;
+  created_at?: string;
 }
 
 interface TeamMember {
@@ -150,14 +151,12 @@ export default function AttendancePage() {
   const canMarkAttendance = isLead || isManager || isHR;
   const canEditAttendance = isManager || isHR;
 
-  // Fetch team members (for leads/managers)
   useEffect(() => {
     if (canMarkAttendance && user) {
       fetchTeamMembers();
     }
   }, [canMarkAttendance, user]);
 
-  // Fetch attendance records
   useEffect(() => {
     if (user) {
       fetchAttendanceRecords();
@@ -195,7 +194,6 @@ export default function AttendancePage() {
       if (response.ok) {
         const data: AttendanceRecord[] = await response.json();
 
-        // ensure each record has a userName
         const selectedEmployeeName =
           selectedEmployee === 'me'
             ? userData?.name || 'Me'
@@ -217,8 +215,6 @@ export default function AttendancePage() {
   const fetchTeamShiftsForDate = async (date: string) => {
     try {
       const token = await user?.getIdToken();
-
-      // Fetch shifts per employee individually to bypass role-based filtering
       const shiftsMap: Record<string, any> = {};
 
       await Promise.all(
@@ -232,9 +228,8 @@ export default function AttendancePage() {
             const data = await response.json();
             const shifts = data.shifts || [];
 
-            // Pick the latest non-rejected shift for this employee on this date
             const validShift = shifts.find(
-              (s: any) => s.shift_date === date && s.status !== 'rejected'
+              (s: any) => s.shift_date === date && s.status === 'approved'
             );
 
             if (validShift) {
@@ -256,7 +251,6 @@ export default function AttendancePage() {
   };
 
   const handleMarkAttendance = async () => {
-    // ensure every member has a shift (unless it's a weekend)
     const dateObj = new Date(markAttendanceData.date);
     const invalidMembers = teamMembers.filter(m => {
       const shift = teamShifts[m.uid];
@@ -266,9 +260,7 @@ export default function AttendancePage() {
 
     if (invalidMembers.length > 0) {
       toast.error(
-        `Cannot submit: no shift assigned for ${invalidMembers
-          .map(m => m.name)
-          .join(', ')}`
+        `Cannot submit: no shift assigned for ${invalidMembers.map(m => m.name).join(', ')}`
       );
       return;
     }
@@ -277,7 +269,6 @@ export default function AttendancePage() {
     try {
       const token = await user?.getIdToken();
 
-      // Mark attendance for all team members
       const promises = Object.entries(teamAttendanceMap).map(async ([userId, status]) => {
         const response = await fetch(`${API_BASE_URL}/attendance`, {
           method: 'POST',
@@ -332,7 +323,6 @@ export default function AttendancePage() {
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
-          // include existing values so server validations continue to pass
           checkIn: editingRecord.checkIn,
           checkOut: editingRecord.checkOut,
           status: toApiStatus(editingRecord.status),
@@ -370,10 +360,8 @@ export default function AttendancePage() {
   };
 
   const handleDayClick = (date: Date) => {
-    const dayRecords = attendanceRecords.filter(r =>
-      isSameDay(new Date(r.date), date)
-    );
-    setSelectedDayRecords(dayRecords);
+    const latest = getLatestRecordForDate(date);
+    setSelectedDayRecords(latest ? [latest] : []);
     setShowDayDetailsDialog(true);
   };
 
@@ -423,27 +411,38 @@ export default function AttendancePage() {
     }
   };
 
+  const getLatestRecordForDate = (date: Date): AttendanceRecord | undefined => {
+    const dayRecords = attendanceRecords.filter(r =>
+      isSameDay(new Date(r.date), date)
+    );
+    if (dayRecords.length === 0) return undefined;
+
+    return dayRecords.reduce((latest, current) => {
+      const latestTime = new Date(latest.created_at ?? 0).getTime();
+      const currentTime = new Date(current.created_at ?? 0).getTime();
+      return currentTime > latestTime ? current : latest;
+    });
+  };
+
   const getCalendarDayColor = (date: Date) => {
-    const record = attendanceRecords.find(r => isSameDay(new Date(r.date), date));
+    const record = getLatestRecordForDate(date);
     if (!record) return undefined;
 
     switch (record.status) {
       case 'present':
-        // Treat present as green by default. If workHours is defined and explicitly
-        // less than 8, use yellow; otherwise assume a full day.
         if (record.workHours != null && record.workHours < 8) {
-          return '#eab308'; // Yellow for short days
+          return '#eab308';
         }
-        return '#22c55e'; // Green for full present days
+        return '#22c55e';
       case 'half-day':
-        return '#eab308'; // Yellow
+        return '#eab308';
       case 'absent':
-        return '#ef4444'; // Red
+        return '#ef4444';
       case 'on-leave':
       case 'holiday':
       case 'week-off':
       case 'comp-off':
-        return '#3b82f6'; // Blue
+        return '#3b82f6';
       default:
         return undefined;
     }
@@ -451,9 +450,7 @@ export default function AttendancePage() {
 
   const calculateStats = (): AttendanceStats => {
     const totalDays = attendanceRecords.length;
-    const presentDays = attendanceRecords.filter(r =>
-      r.status === 'present'
-    ).length;
+    const presentDays = attendanceRecords.filter(r => r.status === 'present').length;
     const absentDays = attendanceRecords.filter(r => r.status === 'absent').length;
     const halfDays = attendanceRecords.filter(r => r.status === 'half-day').length;
     const leaves = attendanceRecords.filter(r =>
@@ -480,7 +477,6 @@ export default function AttendancePage() {
 
   const stats = calculateStats();
 
-  // compute display name for currently selected employee (used when records lack userName)
   const selectedEmployeeName =
     selectedEmployee === 'me'
       ? userData?.name || 'Me'
@@ -497,13 +493,11 @@ export default function AttendancePage() {
         <div className="flex gap-3">
           {canMarkAttendance && (
             <Button onClick={() => {
-              // Initialize attendance map with 'present' for all team members
               const initialMap: Record<string, AttendanceRecord['status']> = {};
               teamMembers.forEach(member => {
                 initialMap[member.uid] = 'present';
               });
               setTeamAttendanceMap(initialMap);
-              // Fetch shifts for the selected date
               fetchTeamShiftsForDate(markAttendanceData.date);
               setShowMarkAttendanceDialog(true);
             }}>
@@ -517,6 +511,79 @@ export default function AttendancePage() {
           </Button>
         </div>
       </div>
+
+      {/* Monthly Stats */}
+      {selectedEmployee === 'me' && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-6">
+              {/* Attendance Rate */}
+              <div className="flex items-center gap-3 pr-6 border-r">
+                <div className="p-2 bg-green-100 rounded-full">
+                  <TrendingUp className="h-5 w-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Attendance Rate</p>
+                  <p className="text-2xl font-bold text-green-600">{stats.attendancePercentage.toFixed(1)}%</p>
+                  <p className="text-xs text-gray-400">{format(currentMonth, 'MMMM yyyy')}</p>
+                </div>
+              </div>
+
+              {/* Stats Row */}
+              <div className="flex flex-1 items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-8 bg-green-500 rounded-full" />
+                  <div>
+                    <p className="text-xs text-gray-500">Present</p>
+                    <p className="text-xl font-bold text-gray-900">{stats.presentDays}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-8 bg-red-500 rounded-full" />
+                  <div>
+                    <p className="text-xs text-gray-500">Absent</p>
+                    <p className="text-xl font-bold text-gray-900">{stats.absentDays}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-8 bg-yellow-500 rounded-full" />
+                  <div>
+                    <p className="text-xs text-gray-500">Half Day</p>
+                    <p className="text-xl font-bold text-gray-900">{stats.halfDays}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-8 bg-blue-500 rounded-full" />
+                  <div>
+                    <p className="text-xs text-gray-500">Leaves</p>
+                    <p className="text-xl font-bold text-gray-900">{stats.leaves}</p>
+                  </div>
+                </div>
+
+                <div className="pl-4 border-l flex items-center gap-2">
+                  <div className="w-2 h-8 bg-purple-500 rounded-full" />
+                  <div>
+                    <p className="text-xs text-gray-500">Total Hours</p>
+                    <p className="text-xl font-bold text-gray-900">{stats.totalWorkHours.toFixed(0)}h</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-8 bg-orange-500 rounded-full" />
+                  <div>
+                    <p className="text-xs text-gray-500">Avg / Day</p>
+                    <p className="text-xl font-bold text-gray-900">{stats.avgWorkHours.toFixed(1)}h</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
 
       {/* Employee Selector for Leads/Managers */}
       {canMarkAttendance && (
@@ -545,60 +612,7 @@ export default function AttendancePage() {
         </Card>
       )}
 
-      {/* Monthly Stats - Only show for own attendance */}
-      {selectedEmployee === 'me' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Monthly Summary</CardTitle>
-            <CardDescription>{format(currentMonth, 'MMMM yyyy')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-gradient-to-r from-green-50 to-green-100 rounded-lg">
-                <div>
-                  <p className="text-sm text-gray-600">Attendance Rate</p>
-                  <p className="text-3xl font-bold text-green-600">
-                    {stats.attendancePercentage.toFixed(1)}%
-                  </p>
-                </div>
-                <TrendingUp className="h-8 w-8 text-green-600" />
-              </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 bg-green-50 rounded-lg">
-                  <p className="text-xs text-gray-600">Present</p>
-                  <p className="text-2xl font-bold text-green-600">{stats.presentDays}</p>
-                </div>
-                <div className="p-3 bg-red-50 rounded-lg">
-                  <p className="text-xs text-gray-600">Absent</p>
-                  <p className="text-2xl font-bold text-red-600">{stats.absentDays}</p>
-                </div>
-                <div className="p-3 bg-yellow-50 rounded-lg">
-                  <p className="text-xs text-gray-600">Half Day</p>
-                  <p className="text-2xl font-bold text-yellow-600">{stats.halfDays}</p>
-                </div>
-                <div className="p-3 bg-blue-50 rounded-lg">
-                  <p className="text-xs text-gray-600">Leaves</p>
-                  <p className="text-2xl font-bold text-blue-600">{stats.leaves}</p>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Total Work Hours</span>
-                  <span className="font-bold">{stats.totalWorkHours.toFixed(1)} hrs</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Avg Hours/Day</span>
-                  <span className="font-bold">{stats.avgWorkHours.toFixed(1)} hrs</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Tabs */}
       <Tabs defaultValue="list" className="space-y-4">
@@ -617,7 +631,6 @@ export default function AttendancePage() {
             <CardContent>
               {attendanceRecords.length > 0 ? (
                 <div className="space-y-4">
-                  {/* Date Range Filter */}
                   <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
                     <div className="flex-1">
                       <Label htmlFor="start-date" className="text-sm">Start Date</Label>
@@ -770,7 +783,7 @@ export default function AttendancePage() {
                       end: endOfMonth(currentMonth)
                     }).map((date, idx) => {
                       const color = getCalendarDayColor(date);
-                      const dayRecord = attendanceRecords.find(r => isSameDay(new Date(r.date), date));
+                      const dayRecord = getLatestRecordForDate(date);
 
                       return (
                         <button
@@ -835,16 +848,19 @@ export default function AttendancePage() {
         </TabsContent>
       </Tabs>
 
-      {/* Mark Attendance Dialog (for Leads/Managers) */}
-      <Dialog open={showMarkAttendanceDialog} onOpenChange={setShowMarkAttendanceDialog}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Mark Team Attendance</DialogTitle>
-            <DialogDescription>
-              Select attendance status for each team member
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
+      {/* Mark Attendance Sheet */}
+      <Sheet open={showMarkAttendanceDialog} onOpenChange={setShowMarkAttendanceDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Mark Team Attendance</SheetTitle>
+              <SheetDescription className="mt-1">
+                Select attendance status for each team member
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6 space-y-5">
             <div className="space-y-2">
               <Label htmlFor="attendance-date">Date *</Label>
               <Input
@@ -853,7 +869,6 @@ export default function AttendancePage() {
                 value={markAttendanceData.date}
                 onChange={(e) => {
                   setMarkAttendanceData({ ...markAttendanceData, date: e.target.value });
-                  // Fetch shifts for the new date
                   fetchTeamShiftsForDate(e.target.value);
                 }}
                 className="max-w-xs"
@@ -863,8 +878,10 @@ export default function AttendancePage() {
             <Separator />
 
             {teamMembers.length > 0 ? (
-              <div className="space-y-3">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Team Members</p>
+              <div className="space-y-4">
+                <p className="text-sm font-medium text-gray-700 sticky top-0 bg-white py-2 z-10">
+                  Team Members
+                </p>
                 {teamMembers.map((member) => {
                   const shift = teamShifts[member.uid];
                   const selectedDate = new Date(markAttendanceData.date);
@@ -872,41 +889,50 @@ export default function AttendancePage() {
                   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
                   return (
-                    <div key={member.uid} className="flex items-center gap-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="font-medium text-gray-900 dark:text-gray-100">{member.name}</p>
+                    <div
+                      key={member.uid}
+                      className="p-4 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex flex-col gap-1">
+                          <p className="font-semibold text-gray-900 text-sm">{member.name}</p>
+                          <p className="text-xs text-gray-500">{member.designation} • {member.department}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
                           {shift ? (
-                            <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800">
-                              <Clock className="h-3 w-3 mr-1" />
+                            <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
                               {shift.shift_type.charAt(0).toUpperCase() + shift.shift_type.slice(1)} ({shift.start_time} - {shift.end_time})
                             </Badge>
                           ) : isWeekend ? (
-                            <Badge variant="outline" className="text-xs bg-orange-50 dark:bg-orange-950 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800">
-                              <CalendarIcon className="h-3 w-3 mr-1" />
+                            <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200 flex items-center gap-1">
+                              <CalendarIcon className="h-3 w-3" />
                               Weekend
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="text-xs bg-red-50 dark:bg-red-900 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800">
-                              <AlertCircle className="h-3 w-3 mr-1" />
-                              No Shift Assigned
+                            <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200 flex items-center gap-1">
+                              <AlertCircle className="h-3 w-3" />
+                              No Shift
                             </Badge>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">{member.designation} - {member.department}</p>
                       </div>
-                      <div className="w-48 flex-shrink-0">
+
+                      <div className="space-y-2 pt-3 mt-3 border-t border-gray-100">
+                        <Label htmlFor={`attendance-${member.uid}`} className="text-xs font-semibold">
+                          Attendance Status
+                        </Label>
                         <Select
                           value={teamAttendanceMap[member.uid] || 'present'}
                           onValueChange={(value) => {
                             setTeamAttendanceMap({
                               ...teamAttendanceMap,
-                              [member.uid]: value as AttendanceRecord['status']
+                              [member.uid]: value as AttendanceRecord['status'],
                             });
                           }}
                           disabled={!shift && !isWeekend}
                         >
-                          <SelectTrigger>
+                          <SelectTrigger id={`attendance-${member.uid}`}>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -919,8 +945,8 @@ export default function AttendancePage() {
                             <SelectItem value="holiday">Holiday</SelectItem>
                           </SelectContent>
                         </Select>
-                        {(!shift && !isWeekend) && (
-                          <p className="text-xs text-red-600 mt-1">Cannot mark – no shift</p>
+                        {!shift && !isWeekend && (
+                          <p className="text-xs text-red-600 font-medium">Cannot mark – no shift assigned</p>
                         )}
                       </div>
                     </div>
@@ -928,41 +954,42 @@ export default function AttendancePage() {
                 })}
               </div>
             ) : (
-              <div className="text-center py-8 text-gray-600 dark:text-gray-400">
+              <div className="text-center py-8 text-gray-600">
                 <Users className="h-12 w-12 text-gray-400 mx-auto mb-3" />
                 <p>No team members found</p>
               </div>
             )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowMarkAttendanceDialog(false);
-              resetMarkAttendanceForm();
-            }}>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowMarkAttendanceDialog(false); resetMarkAttendanceForm(); }}>
               Cancel
             </Button>
             <Button onClick={handleMarkAttendance} disabled={loading || teamMembers.length === 0}>
               {loading ? 'Saving...' : 'Mark Attendance'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
-      {/* Edit Attendance Dialog (for Managers/HR) */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Edit Attendance</DialogTitle>
-            <DialogDescription>
-              Correct attendance record - changes will be logged
-            </DialogDescription>
-          </DialogHeader>
+      {/* Edit Attendance Dialog */}
+      <Sheet open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Edit Attendance</SheetTitle>
+              <SheetDescription className="mt-1">
+                Correct attendance record — changes will be logged
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
           {editingRecord && (
-            <div className="space-y-4 py-4">
-              <div className="p-3 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">Editing attendance for</p>
-                <p className="font-semibold">{editingRecord.userName}</p>
-                <p className="text-sm text-gray-600">{format(new Date(editingRecord.date), 'MMMM dd, yyyy')}</p>
+            <div className="p-6 space-y-5">
+              <div className="p-4 bg-gray-50 border border-gray-100 rounded-lg">
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Editing attendance for</p>
+                <p className="font-semibold text-gray-900 mt-1">{editingRecord.userName}</p>
+                <p className="text-sm text-gray-500">{format(new Date(editingRecord.date), 'MMMM dd, yyyy')}</p>
               </div>
 
               <div className="space-y-2">
@@ -987,56 +1014,58 @@ export default function AttendancePage() {
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowEditDialog(false);
-              setEditingRecord(null);
-            }}>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowEditDialog(false); setEditingRecord(null); }}>
               Cancel
             </Button>
             <Button onClick={handleEditAttendance} disabled={loading}>
               {loading ? 'Saving...' : 'Save Changes'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Day Details Dialog */}
-      <Dialog open={showDayDetailsDialog} onOpenChange={setShowDayDetailsDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Day Details</DialogTitle>
-            <DialogDescription>
-              Attendance records for selected day
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
+      <Sheet open={showDayDetailsDialog} onOpenChange={setShowDayDetailsDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Day Details</SheetTitle>
+              <SheetDescription className="mt-1">
+                Attendance records for the selected day
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6 space-y-4">
             {selectedDayRecords.length > 0 ? (
               selectedDayRecords.map(record => (
-                <div key={record.id} className="p-4 border rounded-lg space-y-2">
+                <div key={record.id} className="p-4 border border-gray-100 rounded-lg space-y-3">
                   <div className="flex items-center justify-between">
-                    <p className="font-semibold">{record.userName}</p>
+                    <p className="font-semibold text-gray-900">{record.userName}</p>
                     <Badge className={getStatusBadge(record.status)}>
                       {record.status}
                     </Badge>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <span className="text-gray-600">Check In:</span>
-                      <span className="ml-2 font-medium">{record.checkIn || '-'}</span>
+                  <Separator />
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="space-y-1">
+                      <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Check In</p>
+                      <p className="font-medium text-gray-900">{record.checkIn || '-'}</p>
                     </div>
-                    <div>
-                      <span className="text-gray-600">Check Out:</span>
-                      <span className="ml-2 font-medium">{record.checkOut || '-'}</span>
+                    <div className="space-y-1">
+                      <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Check Out</p>
+                      <p className="font-medium text-gray-900">{record.checkOut || '-'}</p>
                     </div>
-                    <div className="col-span-2">
-                      <span className="text-gray-600">Work Hours:</span>
-                      <span className="ml-2 font-medium">{record.workHours?.toFixed(2) || '0'} hrs</span>
+                    <div className="space-y-1 col-span-2">
+                      <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Work Hours</p>
+                      <p className="font-medium text-gray-900">{record.workHours?.toFixed(2) || '0'} hrs</p>
                     </div>
                     {record.notes && (
-                      <div className="col-span-2">
-                        <span className="text-gray-600">Notes:</span>
-                        <p className="mt-1 text-gray-800">{record.notes}</p>
+                      <div className="space-y-1 col-span-2">
+                        <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Notes</p>
+                        <p className="text-gray-800 bg-gray-50 p-2 rounded">{record.notes}</p>
                       </div>
                     )}
                   </div>
@@ -1044,17 +1073,17 @@ export default function AttendancePage() {
               ))
             ) : (
               <div className="text-center py-8 text-gray-600">
-                No attendance records for this day
+                <CalendarIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                <p>No attendance records for this day</p>
               </div>
             )}
           </div>
-          <DialogFooter>
-            <Button onClick={() => setShowDayDetailsDialog(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end">
+            <Button onClick={() => setShowDayDetailsDialog(false)}>Close</Button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

@@ -10,13 +10,12 @@ import { Textarea } from '@/components/ui/textarea';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import {
   Select,
   SelectContent,
@@ -29,9 +28,9 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { 
-  Megaphone, 
-  Plus, 
+import {
+  Megaphone,
+  Plus,
   Pin,
   AlertCircle,
   Info,
@@ -567,53 +566,37 @@ export default function AnnouncementsPage() {
       </Tabs>
 
       {/* Create/Edit Dialog */}
-      <Dialog open={showCreateDialog || showEditDialog} onOpenChange={(open) => {
-        if (!open) {
-          setShowCreateDialog(false);
-          setShowEditDialog(false);
-          setEditingAnnouncement(null);
-          resetForm();
-        }
+      <Sheet open={showCreateDialog || showEditDialog} onOpenChange={(open) => {
+        if (!open) { setShowCreateDialog(false); setShowEditDialog(false); setEditingAnnouncement(null); resetForm(); }
       }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingAnnouncement ? 'Edit Announcement' : 'Create New Announcement'}</DialogTitle>
-            <DialogDescription>
-              {editingAnnouncement ? 'Update announcement details' : 'Create a new announcement for your team'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">{editingAnnouncement ? 'Edit Announcement' : 'Create New Announcement'}</SheetTitle>
+              <SheetDescription className="mt-1">
+                {editingAnnouncement ? 'Update announcement details' : 'Create a new announcement for your team'}
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6 space-y-5">
             <div className="space-y-2">
               <Label htmlFor="title">Title *</Label>
-              <Input
-                id="title"
-                placeholder="Announcement title..."
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              />
+              <Input id="title" placeholder="Announcement title..." value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })} />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="description">Description *</Label>
-              <Textarea
-                id="description"
-                placeholder="Write announcement details..."
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                rows={6}
-              />
+              <Textarea id="description" placeholder="Write announcement details..." value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })} rows={6} />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="priority">Priority *</Label>
-                <Select 
-                  value={formData.priority} 
-                  onValueChange={(value: any) => setFormData({ ...formData, priority: value })}
-                >
-                  <SelectTrigger id="priority">
-                    <SelectValue />
-                  </SelectTrigger>
+                <Select value={formData.priority} onValueChange={(value: any) => setFormData({ ...formData, priority: value })}>
+                  <SelectTrigger id="priority"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="low">Low</SelectItem>
                     <SelectItem value="medium">Medium</SelectItem>
@@ -622,36 +605,26 @@ export default function AnnouncementsPage() {
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="space-y-2">
                 <Label htmlFor="expiry-date">Expiry Date (Optional)</Label>
-                <Input
-                  id="expiry-date"
-                  type="date"
-                  value={formData.expiryDate}
+                <Input id="expiry-date" type="date" value={formData.expiryDate}
                   onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
-                  min={format(new Date(), 'yyyy-MM-dd')}
-                />
+                  min={format(new Date(), 'yyyy-MM-dd')} />
               </div>
             </div>
 
             <div className="space-y-2">
               <Label>Target Audience *</Label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-gray-700">Departments</p>
                   {departments.map((dept) => (
                     <div key={dept} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={`dept-${dept}`}
+                      <input type="checkbox" id={`dept-${dept}`}
                         checked={formData.targetAudience.includes(dept)}
                         onChange={() => handleTargetAudienceChange(dept)}
-                        className="rounded border-gray-300"
-                      />
-                      <label htmlFor={`dept-${dept}`} className="text-sm">
-                        {dept}
-                      </label>
+                        className="rounded border-gray-300" />
+                      <label htmlFor={`dept-${dept}`} className="text-sm">{dept}</label>
                     </div>
                   ))}
                 </div>
@@ -659,16 +632,11 @@ export default function AnnouncementsPage() {
                   <p className="text-sm font-medium text-gray-700">Roles</p>
                   {roles.map((role) => (
                     <div key={role} className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={`role-${role}`}
+                      <input type="checkbox" id={`role-${role}`}
                         checked={formData.targetAudience.includes(role)}
                         onChange={() => handleTargetAudienceChange(role)}
-                        className="rounded border-gray-300"
-                      />
-                      <label htmlFor={`role-${role}`} className="text-sm">
-                        {role}
-                      </label>
+                        className="rounded border-gray-300" />
+                      <label htmlFor={`role-${role}`} className="text-sm">{role}</label>
                     </div>
                   ))}
                 </div>
@@ -683,13 +651,8 @@ export default function AnnouncementsPage() {
                   <Label htmlFor="status">Publish Status</Label>
                   <p className="text-sm text-gray-500">Choose whether to publish or save as draft</p>
                 </div>
-                <Select 
-                  value={formData.status} 
-                  onValueChange={(value: any) => setFormData({ ...formData, status: value })}
-                >
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
+                <Select value={formData.status} onValueChange={(value: any) => setFormData({ ...formData, status: value })}>
+                  <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="draft">Draft</SelectItem>
                     <SelectItem value="published">Published</SelectItem>
@@ -702,58 +665,51 @@ export default function AnnouncementsPage() {
                   <Label htmlFor="pinned">Pin Announcement</Label>
                   <p className="text-sm text-gray-500">Pinned announcements appear at the top</p>
                 </div>
-                <Switch
-                  id="pinned"
-                  checked={formData.isPinned}
-                  onCheckedChange={(checked) => setFormData({ ...formData, isPinned: checked })}
-                />
+                <Switch id="pinned" checked={formData.isPinned}
+                  onCheckedChange={(checked) => setFormData({ ...formData, isPinned: checked })} />
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowCreateDialog(false);
-              setShowEditDialog(false);
-              setEditingAnnouncement(null);
-              resetForm();
-            }}>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowCreateDialog(false); setShowEditDialog(false); setEditingAnnouncement(null); resetForm(); }}>
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={editingAnnouncement ? handleUpdateAnnouncement : handleCreateAnnouncement}
               disabled={loading || !formData.title || !formData.description || formData.targetAudience.length === 0}
             >
               {loading ? 'Saving...' : editingAnnouncement ? 'Update Announcement' : 'Create Announcement'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* View Dialog */}
-      <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {viewingAnnouncement?.isPinned && (
-                <Pin className="h-5 w-5 text-blue-600 fill-blue-600" />
-              )}
-              {viewingAnnouncement?.title}
-            </DialogTitle>
-          </DialogHeader>
-          {viewingAnnouncement && (
-            <div className="space-y-4 py-4">
-              <div className="flex gap-2">
-                {getPriorityBadge(viewingAnnouncement.priority)}
-                <Badge variant="outline" className={viewingAnnouncement.status === 'published' ? 'bg-green-50' : 'bg-gray-50'}>
-                  {viewingAnnouncement.status}
-                </Badge>
-                {isExpired(viewingAnnouncement.expiryDate) && (
-                  <Badge variant="outline" className="bg-red-50 text-red-700">
-                    Expired
+      <Sheet open={showViewDialog} onOpenChange={setShowViewDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl flex items-center gap-2">
+                {viewingAnnouncement?.isPinned && <Pin className="h-5 w-5 text-blue-600 fill-blue-600" />}
+                {viewingAnnouncement?.title}
+              </SheetTitle>
+              {viewingAnnouncement && (
+                <div className="flex gap-2 mt-2">
+                  {getPriorityBadge(viewingAnnouncement.priority)}
+                  <Badge variant="outline" className={viewingAnnouncement.status === 'published' ? 'bg-green-50' : 'bg-gray-50'}>
+                    {viewingAnnouncement.status}
                   </Badge>
-                )}
-              </div>
+                  {isExpired(viewingAnnouncement.expiryDate) && (
+                    <Badge variant="outline" className="bg-red-50 text-red-700">Expired</Badge>
+                  )}
+                </div>
+              )}
+            </SheetHeader>
+          </div>
 
+          {viewingAnnouncement && (
+            <div className="p-6 space-y-5">
               <div className="flex items-center gap-4 text-sm text-gray-600">
                 <span className="flex items-center gap-1">
                   <Users className="h-4 w-4" />
@@ -773,72 +729,71 @@ export default function AnnouncementsPage() {
 
               <Separator />
 
-              <div>
-                <p className="text-gray-800 whitespace-pre-wrap">{viewingAnnouncement.description}</p>
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Description</p>
+                <p className="text-gray-800 whitespace-pre-wrap bg-gray-50 border border-gray-100 p-3 rounded-lg text-sm leading-relaxed">
+                  {viewingAnnouncement.description}
+                </p>
               </div>
 
               <Separator />
 
-              <div>
-                <h4 className="font-semibold text-sm mb-2">Target Audience</h4>
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Target Audience</p>
                 <div className="flex flex-wrap gap-2">
                   {viewingAnnouncement.targetAudience.map((audience, index) => (
-                    <Badge key={index} variant="outline">
-                      {audience}
-                    </Badge>
+                    <Badge key={index} variant="outline">{audience}</Badge>
                   ))}
                 </div>
               </div>
 
               {viewingAnnouncement.updatedAt && (
-                <div className="text-xs text-gray-500">
+                <p className="text-xs text-gray-400">
                   Last updated: {format(new Date(viewingAnnouncement.updatedAt), 'MMM dd, yyyy HH:mm')}
-                </div>
+                </p>
               )}
             </div>
           )}
-          <DialogFooter>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end">
             <Button onClick={() => setShowViewDialog(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Announcement</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this announcement? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
+      <Sheet open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Delete Announcement</SheetTitle>
+              <SheetDescription className="mt-1">
+                Are you sure you want to delete this announcement? This action cannot be undone.
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
           {deletingAnnouncement && (
-            <div className="py-4">
-              <div className="p-4 bg-red-50 rounded-lg">
-                <p className="font-semibold">{deletingAnnouncement.title}</p>
-                <p className="text-sm text-gray-600 mt-1">
+            <div className="p-6">
+              <div className="p-4 bg-red-50 border border-red-100 rounded-lg space-y-1">
+                <p className="font-semibold text-gray-900">{deletingAnnouncement.title}</p>
+                <p className="text-sm text-gray-600">
                   Created on {format(new Date(deletingAnnouncement.createdAt), 'MMM dd, yyyy')}
                 </p>
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setShowDeleteDialog(false);
-              setDeletingAnnouncement(null);
-            }}>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowDeleteDialog(false); setDeletingAnnouncement(null); }}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleDeleteAnnouncement} 
-              disabled={loading}
-              className="bg-red-600 hover:bg-red-700"
-            >
+            <Button onClick={handleDeleteAnnouncement} disabled={loading} className="bg-red-600 hover:bg-red-700">
               {loading ? 'Deleting...' : 'Delete Announcement'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
