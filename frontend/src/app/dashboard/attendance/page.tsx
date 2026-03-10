@@ -232,9 +232,9 @@ export default function AttendancePage() {
             const data = await response.json();
             const shifts = data.shifts || [];
 
-            // Pick the latest non-rejected shift for this employee on this date
+            // Pick the approved shift for this employee on this date
             const validShift = shifts.find(
-              (s: any) => s.shift_date === date && s.status !== 'rejected'
+              (s: any) => s.shift_date === date && s.status === 'approved'
             );
 
             if (validShift) {

@@ -248,6 +248,9 @@ export default function ShiftsPage() {
       setShowCreateDialog(false);
       resetForm();
       fetchShifts();
+      if (canApprove) {
+        fetchPendingApprovals();
+      }
     } catch (error) {
       console.error('Create shift error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to create shift');
@@ -339,6 +342,9 @@ export default function ShiftsPage() {
       setShowBulkDialog(false);
       resetBulkForm();
       fetchShifts();
+      if (canApprove) {
+        fetchPendingApprovals();
+      }
     } catch (error) {
       console.error('Bulk create shifts error:', error);
       toast.error('Failed to create bulk shifts');
@@ -551,7 +557,15 @@ export default function ShiftsPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue={userData?.role === 'employee' ? 'my-shifts' : 'all-shifts'} className="space-y-4">
+      <Tabs defaultValue={userData?.role === 'employee' ? 'my-shifts' : 'all-shifts'} onValueChange={(value) => {
+        if (value === 'pending' && canApprove) {
+          fetchPendingApprovals();
+        } else if (value === 'all-shifts') {
+          fetchShifts();
+        } else if (value === 'my-shifts') {
+          fetchShifts();
+        }
+      }} className="space-y-4">
         <TabsList>
           {userData?.role === 'employee' ? (
             <TabsTrigger value="my-shifts">My Shifts</TabsTrigger>
