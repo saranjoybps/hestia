@@ -219,6 +219,28 @@ export default function LeavesPage() {
     }
   };
 
+  const getReportingManagerEmail = async (token?: string) => {
+    const reportingManagerId =
+      userData?.manager_id ||
+      userData?.lead_id ||
+      userData?.managerId ||
+      userData?.leadId;
+
+    if (!reportingManagerId) return undefined;
+
+    const authToken = token || await user?.getIdToken();
+    if (!authToken) return undefined;
+
+    const response = await fetch(`${API_BASE_URL}/users/${reportingManagerId}`, {
+      headers: { 'Authorization': `Bearer ${authToken}` },
+    });
+
+    if (!response.ok) return undefined;
+
+    const managerData = await response.json();
+    return managerData?.email;
+  };
+
   const handleCreateLeave = async () => {
     setLoading(true);
     try {
@@ -231,6 +253,8 @@ export default function LeavesPage() {
         toast.error('End date must be after start date');
         return;
       }
+
+      const ccEmail = await getReportingManagerEmail(token);
 
       const response = await fetch(`${API_BASE_URL}/leaves`, {
         method: 'POST',
@@ -245,6 +269,7 @@ export default function LeavesPage() {
           endDate: formData.endDate,
           totalDays,
           reason: formData.reason,
+          ...(ccEmail ? { cc: ccEmail } : {}),
         }),
       });
 

@@ -15,7 +15,10 @@ interface UserData {
   phone?: string;
   dateOfJoining?: string;
   status: 'active' | 'inactive';
+  manager_id?: string;
+  lead_id?: string;
   managerId?: string;
+  leadId?: string;
   reportees?: string[];
 }
 
