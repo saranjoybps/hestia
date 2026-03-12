@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.dependencies import db, get_current_user, require_role
+from app.services.audit_log import log_audit_event
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
@@ -40,6 +41,27 @@ async def create_department(
         
         doc_ref = db.collection('departments').document()
         doc_ref.set(dept_data)
+
+        # Audit log - department created
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="organization",
+            action="department_created",
+            description=(
+                f"{current_user.get('name', 'Someone')} created department "
+                f"\"{dept_data.get('name')}\"."
+            ),
+            result="success",
+            target_type="department",
+            target_id=doc_ref.id,
+            metadata={
+                "name": dept_data.get("name"),
+                "head_id": dept_data.get("head_id"),
+                "description": dept_data.get("description")
+            }
+        )
         
         return {
             "id": doc_ref.id,
@@ -192,6 +214,27 @@ async def update_department(
         updated_doc = doc_ref.get()
         result = updated_doc.to_dict()
         result['id'] = department_id
+
+        # Audit log - department updated
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="organization",
+            action="department_updated",
+            description=(
+                f"{current_user.get('name', 'Someone')} updated department "
+                f"\"{result.get('name')}\"."
+            ),
+            result="success",
+            target_type="department",
+            target_id=department_id,
+            metadata={
+                "updated_fields": list(update_data.keys()),
+                "name": result.get("name"),
+                "head_id": result.get("head_id")
+            }
+        )
         
         return result
         
@@ -231,6 +274,25 @@ async def delete_department(
             )
         
         doc_ref.delete()
+
+        # Audit log - department deleted
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="organization",
+            action="department_deleted",
+            description=(
+                f"{current_user.get('name', 'Someone')} deleted department "
+                f"\"{dept_data.get('name')}\"."
+            ),
+            result="success",
+            target_type="department",
+            target_id=department_id,
+            metadata={
+                "name": dept_data.get("name")
+            }
+        )
         
         return {"message": "Department deleted successfully"}
         

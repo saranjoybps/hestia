@@ -24,6 +24,7 @@ interface AuditLog {
   actor_id: string;
   actor_name?: string;
   actor_email?: string;
+  module?: string;
   action: string;
   description?: string;
   result?: string;
@@ -40,8 +41,9 @@ export default function AuditLogsPage() {
 
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [moduleFilter, setModuleFilter] = useState('');
   const [page, setPage] = useState(1);
-  const pageSize = 25;
+  const pageSize = 15;
 
   const hasAccess = userData?.role === 'director' || userData?.role === 'super_admin';
 
@@ -73,19 +75,21 @@ export default function AuditLogsPage() {
     }
   };
 
-  const applyDateFilter = (items: AuditLog[]) => {
+  const applyFilters = (items: AuditLog[]) => {
     const from = fromDate ? new Date(fromDate).getTime() : null;
     const to = toDate ? new Date(toDate).getTime() : null;
+    const moduleQuery = moduleFilter.trim().toLowerCase();
 
     return items.filter((log) => {
       const created = new Date(log.created_at).getTime();
       if (from && created < from) return false;
       if (to && created > to) return false;
+      if (moduleQuery && !(log.module || '').toLowerCase().includes(moduleQuery)) return false;
       return true;
     });
   };
 
-  const filteredLogs = applyDateFilter(logs);
+  const filteredLogs = applyFilters(logs);
   const totalPages = Math.max(1, Math.ceil(filteredLogs.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const startIndex = (safePage - 1) * pageSize;
@@ -117,6 +121,10 @@ export default function AuditLogsPage() {
       </div>
 
       <Card>
+        <CardHeader>
+          <CardTitle>Filters</CardTitle>
+          <CardDescription>Filter by date range and module</CardDescription>
+        </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
@@ -143,6 +151,18 @@ export default function AuditLogsPage() {
                 }}
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="module-filter">Module</Label>
+              <Input
+                id="module-filter"
+                value={moduleFilter}
+                onChange={(e) => {
+                  setPage(1);
+                  setModuleFilter(e.target.value);
+                }}
+                placeholder="auth, attendance, leave_request..."
+              />
+            </div>
             <div className="flex items-end">
               <Button
                 variant="outline"
@@ -150,10 +170,11 @@ export default function AuditLogsPage() {
                   setPage(1);
                   setFromDate('');
                   setToDate('');
+                  setModuleFilter('');
                 }}
                 className="w-full"
               >
-                Clear Dates
+                Clear Filters
               </Button>
             </div>
           </div>
@@ -163,7 +184,7 @@ export default function AuditLogsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Recent Events</CardTitle>
-          <CardDescription>Latest 100 audit entries</CardDescription>
+          <CardDescription>Latest audit entries</CardDescription>
         </CardHeader>
         <CardContent>
           {paginatedLogs.length > 0 ? (
@@ -173,8 +194,9 @@ export default function AuditLogsPage() {
                   <TableRow>
                     <TableHead>When</TableHead>
                     <TableHead>Who</TableHead>
+                    <TableHead>Module</TableHead>
                     <TableHead>Action</TableHead>
-                    <TableHead>What Happened</TableHead>
+                    <TableHead className="w-[360px]">What Happened</TableHead>
                     <TableHead>Result</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -190,8 +212,14 @@ export default function AuditLogsPage() {
                           <span className="text-xs text-gray-500">{log.actor_email || log.actor_id}</span>
                         </div>
                       </TableCell>
+                      <TableCell className="font-medium">{log.module || '-'}</TableCell>
                       <TableCell className="font-medium">{log.action}</TableCell>
-                      <TableCell>{log.description || '-'}</TableCell>
+                      <TableCell
+                        className="max-w-[360px] truncate"
+                        title={log.description || ''}
+                      >
+                        {log.description || '-'}
+                      </TableCell>
                       <TableCell>{log.result || '-'}</TableCell>
                     </TableRow>
                   ))}

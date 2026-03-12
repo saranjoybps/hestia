@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from app.dependencies import db, get_current_user, require_role
 from app.models import AttendanceCreate, AttendanceUpdate, AttendanceResponse
+from app.services.audit_log import log_audit_event
 from datetime import datetime
 from typing import Optional
 
@@ -41,11 +42,41 @@ async def create_attendance(
         attendance_doc["created_at"] = datetime.utcnow()
         attendance_doc["updated_at"] = None
         attendance_doc["corrected_by"] = None
+
+        # Fetch employee details for clearer audit logs
+        employee_ref = db.collection("users").document(attendance_data.user_id)
+        employee_doc = employee_ref.get()
+        employee_name = employee_doc.to_dict().get("name") if employee_doc.exists else attendance_data.user_id
         
         # Save to Firestore
         doc_ref = db.collection("attendance").add(attendance_doc)
         
         attendance_doc["id"] = doc_ref[1].id
+
+        # Audit log
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="attendance",
+            action="attendance_marked",
+            description=(
+                f"{current_user.get('name', 'Someone')} marked attendance for {employee_name} "
+                f"on {attendance_data.date} as {attendance_data.status}."
+            ),
+            result="success",
+            target_type="attendance",
+            target_id=attendance_doc["id"],
+            metadata={
+                "user_id": attendance_data.user_id,
+                "user_name": employee_name,
+                "date": attendance_data.date,
+                "status": attendance_data.status,
+                "check_in": attendance_data.check_in,
+                "check_out": attendance_data.check_out
+            }
+        )
+
         return AttendanceResponse(**attendance_doc)
         
     except HTTPException:
@@ -225,6 +256,36 @@ async def update_attendance(
         updated_doc = attendance_ref.get()
         attendance_data = updated_doc.to_dict()
         attendance_data["id"] = attendance_id
+
+        # Fetch employee details for clearer audit logs
+        employee_ref = db.collection("users").document(attendance_data.get("user_id"))
+        employee_doc = employee_ref.get()
+        employee_name = employee_doc.to_dict().get("name") if employee_doc.exists else attendance_data.get("user_id")
+
+        # Audit log
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="attendance",
+            action="attendance_updated",
+            description=(
+                f"{current_user.get('name', 'Someone')} updated attendance for {employee_name} "
+                f"on {attendance_data.get('date')}."
+            ),
+            result="success",
+            target_type="attendance",
+            target_id=attendance_id,
+            metadata={
+                "updated_fields": list(update_data.keys()),
+                "user_id": attendance_data.get("user_id"),
+                "user_name": employee_name,
+                "status": attendance_data.get("status"),
+                "check_in": attendance_data.get("check_in"),
+                "check_out": attendance_data.get("check_out")
+            }
+        )
+
         return AttendanceResponse(**attendance_data)
         
     except HTTPException:

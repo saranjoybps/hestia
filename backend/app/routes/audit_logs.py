@@ -19,6 +19,7 @@ async def create_audit_log(
             actor_id=current_user.get("uid"),
             actor_name=current_user.get("name"),
             actor_email=current_user.get("email"),
+            module=payload.module,
             action=payload.action,
             description=payload.description,
             result=payload.result,

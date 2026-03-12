@@ -77,6 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const createAuditLog = async (
     token: string,
     payload: {
+      module?: string;
       action: string;
       description?: string;
       result?: string;
@@ -108,6 +109,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       await createAuditLog(token, {
+        module: 'auth',
         action: 'login',
         description: 'User logged in',
         result: 'success',
@@ -126,6 +128,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const token = await user?.getIdToken();
       if (token && user?.uid) {
         await createAuditLog(token, {
+          module: 'auth',
           action: 'logout',
           description: 'User logged out',
           result: 'success',

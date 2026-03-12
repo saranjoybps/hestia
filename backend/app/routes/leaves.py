@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from app.dependencies import db, get_current_user, require_role
 from app.models import LeaveCreate, LeaveUpdate, LeaveResponse
+from app.services.audit_log import log_audit_event
+from app.services.zoho_mail import send_email
 from datetime import datetime
 from typing import Optional, Dict
 from pydantic import BaseModel
@@ -74,6 +76,59 @@ async def create_leave_request(
         # Save to Firestore
         doc_ref = db.collection("leaves").add(leave_doc)
         leave_doc["id"] = doc_ref[1].id
+
+        # Audit log - leave request created
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="leave_request",
+            action="leave_requested",
+            description=(
+                f"{current_user.get('name', 'Someone')} submitted a leave request "
+                f"from {leave_doc['startDate']} to {leave_doc['endDate']} "
+                f"({leave_doc['totalDays']} day(s), {leave_doc['leaveType']})."
+            ),
+            result="success",
+            target_type="leave",
+            target_id=leave_doc["id"],
+            metadata={
+                "user_id": leave_doc["userId"],
+                "user_name": leave_doc.get("userName"),
+                "leave_type": leave_doc["leaveType"],
+                "start_date": leave_doc["startDate"],
+                "end_date": leave_doc["endDate"],
+                "total_days": leave_doc["totalDays"],
+                "status": leave_doc["status"]
+            }
+        )
+
+        # Send email notification (Zoho Mail)
+        if leave_data.cc:
+            subject = f"Leave Request: {leave_doc['userName']} ({leave_doc['leaveType']})"
+            body = (
+                f"Hello,\n\n"
+                f"A new leave request has been submitted.\n\n"
+                f"Employee: {leave_doc['userName']} ({leave_doc['userEmail']})\n"
+                f"Department: {leave_doc.get('department', '')}\n"
+                f"Designation: {leave_doc.get('designation', '')}\n"
+                f"Leave Type: {leave_doc['leaveType']}\n"
+                f"Start Date: {leave_doc['startDate']}\n"
+                f"End Date: {leave_doc['endDate']}\n"
+                f"Total Days: {leave_doc['totalDays']}\n"
+                f"Reason: {leave_doc['reason']}\n\n"
+                f"Status: {leave_doc['status']}\n"
+            )
+            try:
+                send_email(
+                    to_email=leave_data.cc,
+                    subject=subject,
+                    html_content=body,
+                    cc_emails=[leave_doc["userEmail"]] if leave_doc.get("userEmail") else None
+                )
+            except Exception as e:
+                # Do not fail leave creation if email sending fails
+                print(f"Zoho mail send failed: {e}")
         
         return leave_doc
         
@@ -398,6 +453,33 @@ async def approve_leave(
         updated_doc = leave_ref.get()
         leave_data = updated_doc.to_dict()
         leave_data["id"] = leave_id
+
+        # Audit log - leave approved
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="leave_request",
+            action="leave_approved",
+            description=(
+                f"{current_user.get('name', 'Someone')} approved leave for "
+                f"{leave_data.get('userName', leave_data.get('userId'))} "
+                f"({leave_data.get('leaveType')}) from {leave_data.get('startDate')} "
+                f"to {leave_data.get('endDate')}."
+            ),
+            result="success",
+            target_type="leave",
+            target_id=leave_id,
+            metadata={
+                "user_id": leave_data.get("userId"),
+                "user_name": leave_data.get("userName"),
+                "leave_type": leave_data.get("leaveType"),
+                "start_date": leave_data.get("startDate"),
+                "end_date": leave_data.get("endDate"),
+                "status": leave_data.get("status")
+            }
+        )
+
         return leave_data
         
     except HTTPException:
@@ -447,6 +529,34 @@ async def reject_leave(
         updated_doc = leave_ref.get()
         leave_data = updated_doc.to_dict()
         leave_data["id"] = leave_id
+
+        # Audit log - leave rejected
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="leave_request",
+            action="leave_rejected",
+            description=(
+                f"{current_user.get('name', 'Someone')} rejected leave for "
+                f"{leave_data.get('userName', leave_data.get('userId'))} "
+                f"({leave_data.get('leaveType')}) from {leave_data.get('startDate')} "
+                f"to {leave_data.get('endDate')}. Reason: {leave_data.get('rejectionReason')}."
+            ),
+            result="success",
+            target_type="leave",
+            target_id=leave_id,
+            metadata={
+                "user_id": leave_data.get("userId"),
+                "user_name": leave_data.get("userName"),
+                "leave_type": leave_data.get("leaveType"),
+                "start_date": leave_data.get("startDate"),
+                "end_date": leave_data.get("endDate"),
+                "status": leave_data.get("status"),
+                "rejection_reason": leave_data.get("rejectionReason")
+            }
+        )
+
         return leave_data
         
     except HTTPException:

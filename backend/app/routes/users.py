@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from firebase_admin import auth as firebase_auth
 from app.dependencies import db, get_current_user, require_role
+from app.services.audit_log import log_audit_event
 from app.models import UserCreate, UserUpdate, UserResponse
 from datetime import datetime
 from typing import Optional
@@ -54,6 +55,29 @@ async def register_user(
         # TODO: Send welcome email
         
         user_doc["uid"] = firebase_user.uid
+
+        # Audit log - employee created
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="employees",
+            action="employee_created",
+            description=(
+                f"{current_user.get('name', 'Someone')} created an employee account for "
+                f"{user_doc.get('name', firebase_user.uid)}."
+            ),
+            result="success",
+            target_type="user",
+            target_id=firebase_user.uid,
+            metadata={
+                "role": user_doc.get("role"),
+                "department": user_doc.get("department"),
+                "designation": user_doc.get("designation"),
+                "status": user_doc.get("status")
+            }
+        )
+
         return UserResponse(**user_doc)
         
     except firebase_auth.EmailAlreadyExistsError:
@@ -241,6 +265,8 @@ async def update_user(
                 detail="User not found"
             )
         
+        original_data = user_doc.to_dict()
+
         # Prepare update data
         update_data = user_update.model_dump(exclude_unset=True)
         
@@ -269,16 +295,23 @@ async def update_user(
         print(f"✅ User updated successfully in Firestore")
         
         # Create audit log
-        audit_log = {
-            "user_id": user_id,
-            "updated_by": current_user.get("uid"),
-            "updated_fields": list(update_data.keys()),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        db.collection("audit_logs").add(audit_log)
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="employees",
+            action="employee_updated",
+            description=(
+                f"{current_user.get('name', 'Someone')} updated profile details for "
+                f"{original_data.get('name', user_id)}."
+            ),
+            result="success",
+            target_type="user",
+            target_id=user_id,
+            metadata={"updated_fields": list(update_data.keys())}
+        )
         
         # Return updated user data by merging original with updates
-        original_data = user_doc.to_dict()
         original_data.update(update_data)
         original_data["uid"] = user_id
         
@@ -323,7 +356,26 @@ async def deactivate_user(
         
         # Disable Firebase Auth account
         firebase_auth.update_user(user_id, disabled=True)
-        
+
+        # Audit log - employee deactivated
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="employees",
+            action="employee_deactivated",
+            description=(
+                f"{current_user.get('name', 'Someone')} deactivated employee "
+                f"{user_doc.to_dict().get('name', user_id)}."
+            ),
+            result="success",
+            target_type="user",
+            target_id=user_id,
+            metadata={
+                "status": "inactive"
+            }
+        )
+
         return {"message": "User deactivated successfully"}
         
     except HTTPException:

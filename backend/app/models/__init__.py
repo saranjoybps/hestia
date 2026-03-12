@@ -124,7 +124,7 @@ class LeaveBase(BaseModel):
 
 class LeaveCreate(LeaveBase):
     """Leave creation model"""
-    pass
+    cc: Optional[EmailStr] = None
 
 
 class LeaveUpdate(BaseModel):
@@ -414,6 +414,7 @@ class AuditLogBase(BaseModel):
     actor_id: str
     actor_name: Optional[str] = None
     actor_email: Optional[EmailStr] = None
+    module: Optional[str] = None
     action: str
     description: Optional[str] = None
     result: Optional[str] = None
@@ -424,6 +425,7 @@ class AuditLogBase(BaseModel):
 
 class AuditLogCreate(BaseModel):
     """Audit log creation model"""
+    module: Optional[str] = None
     action: str
     description: Optional[str] = None
     result: Optional[str] = None
