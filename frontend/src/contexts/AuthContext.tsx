@@ -9,7 +9,7 @@ interface UserData {
   uid: string;
   email: string;
   name: string;
-  role: 'employee' | 'lead' | 'manager' | 'hr' | 'director';
+  role: 'employee' | 'lead' | 'manager' | 'hr' | 'director' | 'super_admin';
   department?: string;
   designation?: string;
   phone?: string;
@@ -74,6 +74,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
+  const createAuditLog = async (
+    token: string,
+    payload: {
+      action: string;
+      description?: string;
+      result?: string;
+      target_type?: string;
+      target_id?: string;
+      metadata?: Record<string, any>;
+    }
+  ) => {
+    try {
+      await apiClient.post(
+        '/audit-logs',
+        payload,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+    } catch (error) {
+      console.warn('Audit log failed:', error);
+    }
+  };
+
   const login = async (email: string, password: string, rememberMe: boolean = false) => {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -84,6 +106,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         sessionStorage.setItem('authToken', token);
       }
+
+      await createAuditLog(token, {
+        action: 'login',
+        description: 'User logged in',
+        result: 'success',
+        target_type: 'auth',
+        target_id: userCredential.user.uid,
+        metadata: { remember_me: rememberMe }
+      });
     } catch (error: any) {
       console.error('Login error:', error);
       throw new Error(error.message || 'Failed to login');
@@ -92,6 +123,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     try {
+      const token = await user?.getIdToken();
+      if (token && user?.uid) {
+        await createAuditLog(token, {
+          action: 'logout',
+          description: 'User logged out',
+          result: 'success',
+          target_type: 'auth',
+          target_id: user.uid
+        });
+      }
       await signOut(auth);
       localStorage.removeItem('authToken');
       sessionStorage.removeItem('authToken');

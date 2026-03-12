@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     # Google Drive (for document storage)
     google_service_account_path: str = "credentials/service-account.json"
     google_drive_folder_id: str = ""  # Optional: specific folder for letters
+
+    # Zoho Mail (optional)
+    zoho_client_id: str | None = None
+    zoho_client_secret: str | None = None
+    zoho_access_token: str | None = None
+    zoho_account_id: str | None = None
+    zoho_from_email: str | None = None
     
     class Config:
         env_file = ".env"

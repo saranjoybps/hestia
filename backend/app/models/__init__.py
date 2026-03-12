@@ -406,3 +406,36 @@ class PermissionResponse(PermissionBase):
     
     class Config:
         from_attributes = True
+
+
+# Audit Log Models
+class AuditLogBase(BaseModel):
+    """Base audit log model"""
+    actor_id: str
+    actor_name: Optional[str] = None
+    actor_email: Optional[EmailStr] = None
+    action: str
+    description: Optional[str] = None
+    result: Optional[str] = None
+    target_type: Optional[str] = None
+    target_id: Optional[str] = None
+    metadata: Optional[dict] = None
+
+
+class AuditLogCreate(BaseModel):
+    """Audit log creation model"""
+    action: str
+    description: Optional[str] = None
+    result: Optional[str] = None
+    target_type: Optional[str] = None
+    target_id: Optional[str] = None
+    metadata: Optional[dict] = None
+
+
+class AuditLogResponse(AuditLogBase):
+    """Audit log response model"""
+    id: str
+    created_at: str
+    
+    class Config:
+        from_attributes = True
