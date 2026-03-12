@@ -51,8 +51,8 @@ export default function DashboardTopBar() {
   };
 
   return (
-    <header className="border-b bg-white dark:bg-gray-900 dark:border-gray-800 h-16 flex items-center justify-between px-4 lg:px-6">
-      <div className="flex items-center gap-2 lg:gap-4 ml-12 lg:ml-0">
+    <header className="border-b bg-white dark:bg-gray-900 dark:border-gray-800 h-17 flex items-center justify-between px-3 lg:px-6">
+      <div className="flex items-center gap-2 lg:gap-4 ml-12 lg:ml-0 py-1 ">
         <h2 className="text-sm lg:text-xl font-semibold text-gray-800 dark:text-gray-100 truncate">
           Welcome back, {userData?.name || 'User'}
         </h2>

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from app.dependencies import db, get_current_user, require_role
 from app.models import LeaveCreate, LeaveUpdate, LeaveResponse
 from app.services.audit_log import log_audit_event
-from app.services.zoho_mail import send_email
+from app.services.zoho_smtp import send_email_smtp
 from datetime import datetime
 from typing import Optional, Dict
 from pydantic import BaseModel
@@ -72,11 +72,59 @@ async def create_leave_request(
             "appliedDate": datetime.utcnow().isoformat(),
             "approvalDate": None,
         }
-        
-        # Save to Firestore
+
+        # Send email notification (Zoho SMTP) BEFORE saving
+        try:
+            manager_id = user_data.get("manager_id") or user_data.get("lead_id")
+            manager_email = None
+            manager_name = None
+            if manager_id:
+                manager_doc = db.collection("users").document(manager_id).get()
+                if manager_doc.exists:
+                    manager_data = manager_doc.to_dict()
+                    manager_email = manager_data.get("email")
+                    manager_name = manager_data.get("name")
+
+            if not manager_email:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Reporting manager email not found for this employee"
+                )
+
+            subject = f"Leave Request: {leave_doc['userName']} ({leave_doc['leaveType']})"
+            body = (
+                "Hello"
+                + (f" {manager_name}," if manager_name else ",")
+                + "\n\n"
+                f"{leave_doc['userName']} has submitted a leave request for your review.\n\n"
+                f"Details:\n"
+                f"- Leave Type: {leave_doc['leaveType']}\n"
+                f"- Dates: {leave_doc['startDate']} to {leave_doc['endDate']}\n"
+                f"- Total Days: {leave_doc['totalDays']}\n"
+                f"- Reason: {leave_doc['reason']}\n\n"
+                "Please review and take the appropriate action at your earliest convenience.\n\n"
+                "Regards,\n"
+                "JoyHR"
+            )
+
+            send_email_smtp(
+                to_email=manager_email,
+                subject=subject,
+                body=body,
+                cc_emails=[leave_doc["userEmail"]] if leave_doc.get("userEmail") else None
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to send leave request email: {str(e)}"
+            )
+
+        # Save to Firestore only after email succeeds
         doc_ref = db.collection("leaves").add(leave_doc)
         leave_doc["id"] = doc_ref[1].id
-
+        
         # Audit log - leave request created
         log_audit_event(
             actor_id=current_user.get("uid"),
@@ -103,33 +151,6 @@ async def create_leave_request(
             }
         )
 
-        # Send email notification (Zoho Mail)
-        if leave_data.cc:
-            subject = f"Leave Request: {leave_doc['userName']} ({leave_doc['leaveType']})"
-            body = (
-                f"Hello,\n\n"
-                f"A new leave request has been submitted.\n\n"
-                f"Employee: {leave_doc['userName']} ({leave_doc['userEmail']})\n"
-                f"Department: {leave_doc.get('department', '')}\n"
-                f"Designation: {leave_doc.get('designation', '')}\n"
-                f"Leave Type: {leave_doc['leaveType']}\n"
-                f"Start Date: {leave_doc['startDate']}\n"
-                f"End Date: {leave_doc['endDate']}\n"
-                f"Total Days: {leave_doc['totalDays']}\n"
-                f"Reason: {leave_doc['reason']}\n\n"
-                f"Status: {leave_doc['status']}\n"
-            )
-            try:
-                send_email(
-                    to_email=leave_data.cc,
-                    subject=subject,
-                    html_content=body,
-                    cc_emails=[leave_doc["userEmail"]] if leave_doc.get("userEmail") else None
-                )
-            except Exception as e:
-                # Do not fail leave creation if email sending fails
-                print(f"Zoho mail send failed: {e}")
-        
         return leave_doc
         
     except HTTPException:
@@ -439,7 +460,44 @@ async def approve_leave(
         approver_ref = db.collection("users").document(approve_data.approvedBy)
         approver_doc = approver_ref.get()
         approver_name = approver_doc.to_dict().get("name", "Unknown") if approver_doc.exists else "Unknown"
-        
+
+        # Get leave data for email and audit
+        leave_data = leave_doc.to_dict()
+        leave_data["id"] = leave_id
+
+        # Send approval email BEFORE updating
+        try:
+            manager_id = current_user.get("uid")
+            manager_email = None
+            manager_doc = db.collection("users").document(manager_id).get()
+            if manager_doc.exists:
+                manager_info = manager_doc.to_dict()
+                manager_email = manager_info.get("email")
+
+            employee_email = leave_data.get("userEmail")
+            if not employee_email:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Employee email not found for this leave request"
+                )
+
+            subject = "Leave Request Approved"
+            body = "Your leave request has been approved."
+
+            send_email_smtp(
+                to_email=employee_email,
+                subject=subject,
+                body=body,
+                cc_emails=[manager_email] if manager_email else None
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to send approval email: {str(e)}"
+            )
+
         # Update leave status
         update_data = {
             "status": "approved",
@@ -448,8 +506,8 @@ async def approve_leave(
             "approvalDate": datetime.utcnow().isoformat(),
         }
         leave_ref.update(update_data)
-        
-        # Get updated leave
+
+        # Refresh for audit log status
         updated_doc = leave_ref.get()
         leave_data = updated_doc.to_dict()
         leave_data["id"] = leave_id
@@ -514,7 +572,44 @@ async def reject_leave(
         rejecter_ref = db.collection("users").document(reject_data.rejectedBy)
         rejecter_doc = rejecter_ref.get()
         rejecter_name = rejecter_doc.to_dict().get("name", "Unknown") if rejecter_doc.exists else "Unknown"
-        
+
+        # Get leave data for email and audit
+        leave_data = leave_doc.to_dict()
+        leave_data["id"] = leave_id
+
+        # Send rejection email BEFORE updating
+        try:
+            manager_id = current_user.get("uid")
+            manager_email = None
+            manager_doc = db.collection("users").document(manager_id).get()
+            if manager_doc.exists:
+                manager_info = manager_doc.to_dict()
+                manager_email = manager_info.get("email")
+
+            employee_email = leave_data.get("userEmail")
+            if not employee_email:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Employee email not found for this leave request"
+                )
+
+            subject = "Leave Request Rejected"
+            body = "Your leave request has been rejected."
+
+            send_email_smtp(
+                to_email=employee_email,
+                subject=subject,
+                body=body,
+                cc_emails=[manager_email] if manager_email else None
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to send rejection email: {str(e)}"
+            )
+
         # Update leave status
         update_data = {
             "status": "rejected",
@@ -524,8 +619,8 @@ async def reject_leave(
             "approvalDate": datetime.utcnow().isoformat(),
         }
         leave_ref.update(update_data)
-        
-        # Get updated leave
+
+        # Refresh for audit log status
         updated_doc = leave_ref.get()
         leave_data = updated_doc.to_dict()
         leave_data["id"] = leave_id
