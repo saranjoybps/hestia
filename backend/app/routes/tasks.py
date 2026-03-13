@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from app.dependencies import db, get_current_user, require_role
 from app.models import TaskCreate, TaskUpdate, TaskResponse
+from app.services.audit_log import log_audit_event
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
@@ -37,6 +38,29 @@ async def create_task(
         
         doc_ref = db.collection("tasks").add(task_doc)
         task_doc["id"] = doc_ref[1].id
+
+        # Audit log - task created
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="tasks",
+            action="task_created",
+            description=(
+                f"{current_user.get('name', 'Someone')} created task \"{task_doc['title']}\" "
+                f"for {task_doc.get('assigneeName', task_doc.get('assigneeId'))}."
+            ),
+            result="success",
+            target_type="task",
+            target_id=task_doc["id"],
+            metadata={
+                "assignee_id": task_doc.get("assigneeId"),
+                "assignee_name": task_doc.get("assigneeName"),
+                "priority": task_doc.get("priority"),
+                "status": task_doc.get("status"),
+                "due_date": task_doc.get("dueDate")
+            }
+        )
         
         return task_doc
         
@@ -135,6 +159,30 @@ async def update_task(
         updated_doc = task_ref.get()
         task_data = updated_doc.to_dict()
         task_data["id"] = task_id
+
+        # Audit log - task updated
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="tasks",
+            action="task_updated",
+            description=(
+                f"{current_user.get('name', 'Someone')} updated task "
+                f"\"{task_data.get('title', task_id)}\"."
+            ),
+            result="success",
+            target_type="task",
+            target_id=task_id,
+            metadata={
+                "updated_fields": list(update_data.keys()),
+                "assignee_id": task_data.get("assigneeId"),
+                "assignee_name": task_data.get("assigneeName"),
+                "status": task_data.get("status"),
+                "priority": task_data.get("priority")
+            }
+        )
+
         return task_data
         
     except HTTPException:
@@ -171,6 +219,28 @@ async def update_task_status(
         updated_doc = task_ref.get()
         task_data = updated_doc.to_dict()
         task_data["id"] = task_id
+
+        # Audit log - task status updated
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="tasks",
+            action="task_status_updated",
+            description=(
+                f"{current_user.get('name', 'Someone')} changed status of task "
+                f"\"{task_data.get('title', task_id)}\" to {task_data.get('status')}."
+            ),
+            result="success",
+            target_type="task",
+            target_id=task_id,
+            metadata={
+                "status": task_data.get("status"),
+                "assignee_id": task_data.get("assigneeId"),
+                "assignee_name": task_data.get("assigneeName")
+            }
+        )
+
         return task_data
         
     except HTTPException:
@@ -197,8 +267,32 @@ async def delete_task(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Task not found"
             )
-        
+
+        task_data = task_doc.to_dict()
         task_ref.delete()
+
+        # Audit log - task deleted
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="tasks",
+            action="task_deleted",
+            description=(
+                f"{current_user.get('name', 'Someone')} deleted task "
+                f"\"{task_data.get('title', task_id)}\"."
+            ),
+            result="success",
+            target_type="task",
+            target_id=task_id,
+            metadata={
+                "assignee_id": task_data.get("assigneeId"),
+                "assignee_name": task_data.get("assigneeName"),
+                "status": task_data.get("status"),
+                "priority": task_data.get("priority")
+            }
+        )
+
         return {"message": "Task deleted successfully"}
         
     except HTTPException:

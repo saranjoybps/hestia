@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from app.dependencies import db, get_current_user, require_role
 from app.models import AnnouncementCreate, AnnouncementUpdate, AnnouncementResponse
+from app.services.audit_log import log_audit_event
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
@@ -38,6 +39,27 @@ async def create_announcement(
         
         doc_ref = db.collection("announcements").add(announcement_doc)
         announcement_doc["id"] = doc_ref[1].id
+
+        # Audit log - announcement created
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="announcements",
+            action="announcement_created",
+            description=(
+                f"{current_user.get('name', 'Someone')} created announcement "
+                f"\"{announcement_doc.get('title', '')}\"."
+            ),
+            result="success",
+            target_type="announcement",
+            target_id=announcement_doc["id"],
+            metadata={
+                "priority": announcement_doc.get("priority"),
+                "status": announcement_doc.get("status"),
+                "is_pinned": announcement_doc.get("isPinned")
+            }
+        )
         
         return announcement_doc
         
@@ -196,6 +218,29 @@ async def update_announcement(
         updated_doc = announcement_ref.get()
         announcement_data = updated_doc.to_dict()
         announcement_data["id"] = announcement_id
+
+        # Audit log - announcement updated
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="announcements",
+            action="announcement_updated",
+            description=(
+                f"{current_user.get('name', 'Someone')} updated announcement "
+                f"\"{announcement_data.get('title', '')}\"."
+            ),
+            result="success",
+            target_type="announcement",
+            target_id=announcement_id,
+            metadata={
+                "updated_fields": list(update_data.keys()),
+                "priority": announcement_data.get("priority"),
+                "status": announcement_data.get("status"),
+                "is_pinned": announcement_data.get("isPinned")
+            }
+        )
+
         return announcement_data
         
     except HTTPException:
@@ -235,6 +280,27 @@ async def toggle_pin_announcement(
         updated_doc = announcement_ref.get()
         announcement_data = updated_doc.to_dict()
         announcement_data["id"] = announcement_id
+
+        # Audit log - announcement pinned/unpinned
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="announcements",
+            action="announcement_pinned" if pin_data.isPinned else "announcement_unpinned",
+            description=(
+                f"{current_user.get('name', 'Someone')} "
+                f"{'pinned' if pin_data.isPinned else 'unpinned'} announcement "
+                f"\"{announcement_data.get('title', '')}\"."
+            ),
+            result="success",
+            target_type="announcement",
+            target_id=announcement_id,
+            metadata={
+                "is_pinned": announcement_data.get("isPinned")
+            }
+        )
+
         return announcement_data
         
     except HTTPException:
@@ -272,7 +338,28 @@ async def delete_announcement(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only delete your own announcements"
             )
-        
+
+        # Audit log - announcement deleted
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="announcements",
+            action="announcement_deleted",
+            description=(
+                f"{current_user.get('name', 'Someone')} deleted announcement "
+                f"\"{announcement_data.get('title', '')}\"."
+            ),
+            result="success",
+            target_type="announcement",
+            target_id=announcement_id,
+            metadata={
+                "priority": announcement_data.get("priority"),
+                "status": announcement_data.get("status"),
+                "is_pinned": announcement_data.get("isPinned")
+            }
+        )
+
         announcement_ref.delete()
         return {"message": "Announcement deleted successfully"}
         

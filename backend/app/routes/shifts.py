@@ -4,6 +4,7 @@ from datetime import datetime
 from app.dependencies import get_current_user, require_role
 from app.dependencies import db
 from app.models import ShiftCreate, ShiftUpdate, ShiftResponse
+from app.services.audit_log import log_audit_event
 from google.cloud.firestore_v1 import FieldFilter
 
 router = APIRouter(tags=["shifts"])
@@ -77,6 +78,32 @@ async def create_shift(
         
         shift_ref = db.collection("shifts").document()
         shift_ref.set(shift_data)
+
+        # Audit log - shift created
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="shift_management",
+            action="shift_created",
+            description=(
+                f"{current_user.get('name', 'Someone')} created a {shift_data['shift_type']} shift for "
+                f"{shift_data.get('employee_name', shift_data['employee_id'])} on {shift_data['shift_date']} "
+                f"({shift_data['start_time']} - {shift_data['end_time']})."
+            ),
+            result="success",
+            target_type="shift",
+            target_id=shift_ref.id,
+            metadata={
+                "employee_id": shift_data["employee_id"],
+                "employee_name": shift_data.get("employee_name"),
+                "shift_type": shift_data["shift_type"],
+                "shift_date": shift_data["shift_date"],
+                "start_time": shift_data["start_time"],
+                "end_time": shift_data["end_time"],
+                "status": shift_data["status"]
+            }
+        )
         
         return ShiftResponse(
             id=shift_ref.id,
@@ -272,6 +299,30 @@ async def approve_shift(
         # Get updated data
         updated_doc = shift_ref.get()
         updated_data = updated_doc.to_dict()
+
+        # Audit log - shift approved
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="shift_management",
+            action="shift_approved",
+            description=(
+                f"{current_user.get('name', 'Someone')} approved the shift for "
+                f"{updated_data.get('employee_name', updated_data.get('employee_id'))} on "
+                f"{updated_data.get('shift_date')}."
+            ),
+            result="success",
+            target_type="shift",
+            target_id=shift_id,
+            metadata={
+                "employee_id": updated_data.get("employee_id"),
+                "employee_name": updated_data.get("employee_name"),
+                "shift_type": updated_data.get("shift_type"),
+                "shift_date": updated_data.get("shift_date"),
+                "status": updated_data.get("status")
+            }
+        )
         
         return ShiftResponse(
             id=shift_id,
@@ -355,6 +406,31 @@ async def reject_shift(
         # Get updated data
         updated_doc = shift_ref.get()
         updated_data = updated_doc.to_dict()
+
+        # Audit log - shift rejected
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="shift_management",
+            action="shift_rejected",
+            description=(
+                f"{current_user.get('name', 'Someone')} rejected the shift for "
+                f"{updated_data.get('employee_name', updated_data.get('employee_id'))} on "
+                f"{updated_data.get('shift_date')}. Reason: {updated_data.get('rejection_reason')}."
+            ),
+            result="success",
+            target_type="shift",
+            target_id=shift_id,
+            metadata={
+                "employee_id": updated_data.get("employee_id"),
+                "employee_name": updated_data.get("employee_name"),
+                "shift_type": updated_data.get("shift_type"),
+                "shift_date": updated_data.get("shift_date"),
+                "status": updated_data.get("status"),
+                "rejection_reason": updated_data.get("rejection_reason")
+            }
+        )
         
         return ShiftResponse(
             id=shift_id,
@@ -417,6 +493,30 @@ async def delete_shift(
             )
         
         shift_ref.delete()
+
+        # Audit log - shift deleted
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="shift_management",
+            action="shift_deleted",
+            description=(
+                f"{current_user.get('name', 'Someone')} deleted the shift for "
+                f"{shift_data.get('employee_name', shift_data.get('employee_id'))} on "
+                f"{shift_data.get('shift_date')}."
+            ),
+            result="success",
+            target_type="shift",
+            target_id=shift_id,
+            metadata={
+                "employee_id": shift_data.get("employee_id"),
+                "employee_name": shift_data.get("employee_name"),
+                "shift_type": shift_data.get("shift_type"),
+                "shift_date": shift_data.get("shift_date"),
+                "status": shift_data.get("status")
+            }
+        )
         
         return {"message": "Shift deleted successfully", "id": shift_id}
         
@@ -482,6 +582,33 @@ async def update_shift(
         # Get updated data
         updated_doc = shift_ref.get()
         updated_data = updated_doc.to_dict()
+
+        # Audit log - shift updated
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="shift_management",
+            action="shift_updated",
+            description=(
+                f"{current_user.get('name', 'Someone')} updated the shift for "
+                f"{updated_data.get('employee_name', updated_data.get('employee_id'))} on "
+                f"{updated_data.get('shift_date')}."
+            ),
+            result="success",
+            target_type="shift",
+            target_id=shift_id,
+            metadata={
+                "updated_fields": list(update_data.keys()),
+                "employee_id": updated_data.get("employee_id"),
+                "employee_name": updated_data.get("employee_name"),
+                "shift_type": updated_data.get("shift_type"),
+                "shift_date": updated_data.get("shift_date"),
+                "start_time": updated_data.get("start_time"),
+                "end_time": updated_data.get("end_time"),
+                "status": updated_data.get("status")
+            }
+        )
         
         return ShiftResponse(
             id=shift_id,

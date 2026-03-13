@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
-from app.routes import users, attendance, leaves, tasks, performance, announcements, reports, departments, letters, onboarding, shifts
+from app.routes import users, attendance, leaves, tasks, performance, announcements, reports, departments, letters, onboarding, shifts, audit_logs
 import re
 
 settings = get_settings()
@@ -57,6 +57,7 @@ app.include_router(departments.router, prefix="/api")
 app.include_router(letters.router, prefix="/api")
 app.include_router(onboarding.router, prefix="/api")
 app.include_router(shifts.router, prefix="/api")
+app.include_router(audit_logs.router, prefix="/api")
 
 @app.get("/")
 async def root():

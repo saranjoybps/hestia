@@ -58,6 +58,11 @@ const nextConfig: NextConfig = {
         destination: '/dashboard/documents',
         permanent: false,
       },
+      {
+        source: '/audit-logs',
+        destination: '/dashboard/audit-logs',
+        permanent: false,
+      },
     ];
   },
 };

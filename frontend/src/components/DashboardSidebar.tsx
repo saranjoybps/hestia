@@ -22,6 +22,7 @@ import {
   Clock,
   UserPlus,
   Menu,
+  ClipboardList,
 } from 'lucide-react';
 
 interface NavItem {
@@ -45,6 +46,7 @@ const navItems: NavItem[] = [
   { title: 'Announcements', href: '/announcements', icon: Megaphone, group: 'Manage' },
   { title: 'Organization', href: '/organization', icon: Building2, roles: ['director', 'hr'], group: 'Manage' },
   { title: 'Reports & Analytics', href: '/reports', icon: BarChart3, roles: ['director', 'manager', 'hr'], group: 'Manage' },
+  { title: 'Audit Log', href: '/audit-logs', icon: ClipboardList, roles: ['director', 'super_admin'], group: 'Manage' },
 ];
 
 const groups = ['Main', 'Work', 'Manage'];

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.dependencies import db, get_current_user, require_role
 from app.models import PerformanceReviewCreate, PerformanceReviewUpdate, PerformanceReviewResponse
+from app.services.audit_log import log_audit_event
 from datetime import datetime
 from typing import Optional, Literal
 from pydantic import BaseModel
@@ -62,6 +63,31 @@ async def create_performance_review(
         doc_ref.set(review_doc)
         
         review_doc["id"] = doc_ref.id
+
+        # Audit log - review created
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="performance",
+            action="performance_review_created",
+            description=(
+                f"{current_user.get('name', 'Someone')} created a performance review for "
+                f"{review_doc.get('userName', review_doc.get('userId'))} "
+                f"({review_doc.get('reviewType')}, rating {review_doc.get('rating')})."
+            ),
+            result="success",
+            target_type="performance_review",
+            target_id=review_doc["id"],
+            metadata={
+                "user_id": review_doc.get("userId"),
+                "user_name": review_doc.get("userName"),
+                "review_type": review_doc.get("reviewType"),
+                "rating": review_doc.get("rating"),
+                "status": review_doc.get("status")
+            }
+        )
+
         return review_doc
         
     except HTTPException:
@@ -171,6 +197,30 @@ async def approve_review(
             'approvalDate': datetime.utcnow().isoformat(),
             'updatedAt': datetime.utcnow().isoformat(),
         })
+
+        # Audit log - review approved
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="performance",
+            action="performance_review_approved",
+            description=(
+                f"{current_user.get('name', 'Someone')} approved a performance review for "
+                f"{review_data.get('userName', review_data.get('userId'))} "
+                f"({review_data.get('reviewType')}, rating {review_data.get('rating')})."
+            ),
+            result="success",
+            target_type="performance_review",
+            target_id=review_id,
+            metadata={
+                "user_id": review_data.get("userId"),
+                "user_name": review_data.get("userName"),
+                "review_type": review_data.get("reviewType"),
+                "rating": review_data.get("rating"),
+                "status": "approved"
+            }
+        )
         
         return {"message": "Review approved successfully"}
         
@@ -223,6 +273,31 @@ async def reject_review(
             'rejectionDate': datetime.utcnow().isoformat(),
             'updatedAt': datetime.utcnow().isoformat(),
         })
+
+        # Audit log - review rejected
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="performance",
+            action="performance_review_rejected",
+            description=(
+                f"{current_user.get('name', 'Someone')} rejected a performance review for "
+                f"{review_data.get('userName', review_data.get('userId'))}. "
+                f"Reason: {rejection.rejectionReason}."
+            ),
+            result="success",
+            target_type="performance_review",
+            target_id=review_id,
+            metadata={
+                "user_id": review_data.get("userId"),
+                "user_name": review_data.get("userName"),
+                "review_type": review_data.get("reviewType"),
+                "rating": review_data.get("rating"),
+                "status": "rejected",
+                "rejection_reason": rejection.rejectionReason
+            }
+        )
         
         return {"message": "Review rejected"}
         
@@ -398,6 +473,29 @@ async def delete_review(
                 detail="Access denied"
             )
         
+        # Audit log - review deleted
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="performance",
+            action="performance_review_deleted",
+            description=(
+                f"{current_user.get('name', 'Someone')} deleted a performance review for "
+                f"{review_data.get('userName', review_data.get('userId'))}."
+            ),
+            result="success",
+            target_type="performance_review",
+            target_id=review_id,
+            metadata={
+                "user_id": review_data.get("userId"),
+                "user_name": review_data.get("userName"),
+                "review_type": review_data.get("reviewType"),
+                "rating": review_data.get("rating"),
+                "status": review_data.get("status")
+            }
+        )
+
         doc_ref.delete()
         return {"message": "Review deleted successfully"}
         
