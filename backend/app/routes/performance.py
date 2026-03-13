@@ -25,8 +25,8 @@ async def create_performance_review(
 ):
     """
     Create a performance review
-    Leads/Managers can create reviews
-    Lead reviews require manager approval
+    Leads/Managers/HR can create reviews
+    Reviews require director approval unless created by a director
     """
     try:
         # Verify reviewer is current user
@@ -48,13 +48,14 @@ async def create_performance_review(
         review_doc = review_data.model_dump()
         
         # Determine status based on reviewer role
-        if user_role == "lead":
-            review_doc["status"] = "pending"
-        else:
+        # Only directors can auto-approve their own reviews
+        if user_role == "director":
             review_doc["status"] = "approved"
             review_doc["approvedBy"] = current_user.get("uid")
             review_doc["approverName"] = current_user.get("name", "Unknown")
             review_doc["approvalDate"] = datetime.utcnow().isoformat()
+        else:
+            review_doc["status"] = "pending"
         
         review_doc["createdAt"] = datetime.utcnow().isoformat()
         review_doc["updatedAt"] = datetime.utcnow().isoformat()
@@ -100,7 +101,7 @@ async def create_performance_review(
 
 
 @router.get("/")
-async def list_reviews(current_user: dict = Depends(get_current_user)):
+async def list_reviews(current_user: dict = Depends(require_role("lead", "manager", "director", "hr"))):
     """Get performance reviews based on user role"""
     try:
         reviews_ref = db.collection('performance_reviews')
@@ -112,9 +113,6 @@ async def list_reviews(current_user: dict = Depends(get_current_user)):
         elif current_user['role'] == 'lead':
             # Leads can see reviews they created
             docs = reviews_ref.where('reviewerId', '==', current_user['uid']).order_by('createdAt', direction='DESCENDING').stream()
-        else:
-            # Regular employees can only see their own performance reviews
-            docs = reviews_ref.where('userId', '==', current_user['uid']).order_by('createdAt', direction='DESCENDING').stream()
         
         reviews = []
         for doc in docs:
@@ -133,13 +131,13 @@ async def list_reviews(current_user: dict = Depends(get_current_user)):
 
 @router.get("/pending-approvals")
 async def get_pending_approvals(
-    current_user: dict = Depends(require_role("manager", "director", "hr"))
+    current_user: dict = Depends(require_role("director"))
 ):
-    """Get reviews pending approval"""
+    """Get reviews pending director approval"""
     try:
+        # Avoid Firestore composite index by sorting in memory
         docs = db.collection('performance_reviews')\
             .where('status', '==', 'pending')\
-            .order_by('createdAt', direction='DESCENDING')\
             .stream()
         
         reviews = []
@@ -148,6 +146,7 @@ async def get_pending_approvals(
             review_data['id'] = doc.id
             reviews.append(review_data)
         
+        reviews.sort(key=lambda r: r.get('createdAt', ''), reverse=True)
         return reviews
         
     except Exception as e:
@@ -161,9 +160,9 @@ async def get_pending_approvals(
 async def approve_review(
     review_id: str,
     approval: ApprovalRequest,
-    current_user: dict = Depends(require_role("manager", "director", "hr"))
+    current_user: dict = Depends(require_role("director"))
 ):
-    """Approve a pending performance review"""
+    """Approve a pending performance review (Directors only)"""
     try:
         # Verify approver is current user
         if approval.approvedBy != current_user.get("uid"):
@@ -237,9 +236,9 @@ async def approve_review(
 async def reject_review(
     review_id: str,
     rejection: RejectionRequest,
-    current_user: dict = Depends(require_role("manager", "director", "hr"))
+    current_user: dict = Depends(require_role("director"))
 ):
-    """Reject a pending performance review"""
+    """Reject a pending performance review (Directors only)"""
     try:
         # Verify rejector is current user
         if rejection.rejectedBy != current_user.get("uid"):
@@ -407,7 +406,7 @@ async def get_performance_stats(
 @router.get("/{review_id}")
 async def get_review(
     review_id: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_role("lead", "manager", "director", "hr"))
 ):
     """Get a single performance review"""
     try:
@@ -422,17 +421,6 @@ async def get_review(
         
         review_data = doc.to_dict()
         review_data['id'] = doc.id
-        
-        # Check permissions
-        is_hr_or_manager = current_user['role'] in ['hr', 'director', 'manager']
-        is_reviewer = review_data.get('reviewerId') == current_user['uid']
-        is_subject = review_data.get('userId') == current_user['uid']
-        
-        if not (is_hr_or_manager or is_reviewer or is_subject):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied"
-            )
         
         return review_data
         

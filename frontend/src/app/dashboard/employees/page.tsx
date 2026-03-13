@@ -68,6 +68,7 @@ interface Employee {
   uid: string;
   email: string;
   name: string;
+  lastName?: string;
   role: 'employee' | 'lead' | 'manager' | 'hr' | 'director';
   department: string;
   designation: string;
@@ -84,6 +85,7 @@ interface Employee {
 interface EmployeeFormData {
   email: string;
   name: string;
+  lastName: string;
   password?: string;
   role: Employee['role'];
   department: string;
@@ -96,6 +98,7 @@ interface EmployeeFormData {
 interface ReporteeStats {
   uid: string;
   name: string;
+  lastName?: string;
   email: string;
   designation: string;
   department: string;
@@ -117,6 +120,7 @@ interface OnboardingRequest {
   id: string;
   email: string;
   name: string;
+  lastName?: string;
   phone: string;
   role: 'employee' | 'lead' | 'manager' | 'hr' | 'director';
   department: string;
@@ -166,6 +170,7 @@ export default function EmployeesPage() {
   const [formData, setFormData] = useState<EmployeeFormData>({
     email: '',
     name: '',
+    lastName: '',
     password: '',
     role: 'employee',
     department: '',
@@ -186,6 +191,22 @@ export default function EmployeesPage() {
   const isLead = userData?.role === 'lead';
   const isManager = userData?.role === 'manager' || userData?.role === 'director';
   const canViewReportees = isLead || isManager;
+
+  const normalizeEmployee = (employee: any): Employee => ({
+    ...employee,
+    lastName: employee.last_name ?? employee.lastName,
+    managerId: employee.manager_id ?? employee.managerId,
+  });
+
+  const normalizeOnboardingRequest = (request: any): OnboardingRequest => ({
+    ...request,
+    lastName: request.last_name ?? request.lastName,
+  });
+
+  const getFullName = (firstName?: string, lastName?: string) => {
+    const full = [firstName, lastName].filter(Boolean).join(' ');
+    return full || firstName || '';
+  };
 
   useEffect(() => {
     if (user) {
@@ -238,13 +259,15 @@ export default function EmployeesPage() {
 
       if (response.ok) {
         const data = await response.json();
-        setEmployees(data.users || data);
+        const rawEmployees = Array.isArray(data.users) ? data.users : Array.isArray(data) ? data : [];
+        const normalizedEmployees = rawEmployees.map(normalizeEmployee);
+        setEmployees(normalizedEmployees);
         if (data.total !== undefined) {
           setTotalEmployees(data.total);
           setTotalPages(Math.ceil(data.total / itemsPerPage));
         } else {
           // Fallback if backend doesn't return total
-          setTotalEmployees(data.users?.length || data.length || 0);
+          setTotalEmployees(normalizedEmployees.length);
         }
       }
     } catch (error) {
@@ -265,7 +288,12 @@ export default function EmployeesPage() {
 
       if (response.ok) {
         const data = await response.json();
-        setReportees(data);
+        const rawReportees = Array.isArray(data) ? data : [];
+        const normalizedReportees = rawReportees.map((reportee) => ({
+          ...reportee,
+          lastName: reportee.last_name ?? reportee.lastName,
+        }));
+        setReportees(normalizedReportees);
       }
     } catch (error) {
       console.error('Error fetching reportees:', error);
@@ -284,7 +312,9 @@ export default function EmployeesPage() {
 
       if (response.ok) {
         const data = await response.json();
-        setManagers(data.users || data);
+        const rawManagers = Array.isArray(data.users) ? data.users : Array.isArray(data) ? data : [];
+        const normalizedManagers = rawManagers.map(normalizeEmployee);
+        setManagers(normalizedManagers);
       }
     } catch (error) {
       console.error('Error fetching managers:', error);
@@ -310,7 +340,8 @@ export default function EmployeesPage() {
 
         if (response.ok) {
           const data = await response.json();
-          setPendingRequests(data.requests || []);
+          const rawRequests = Array.isArray(data.requests) ? data.requests : Array.isArray(data) ? data : [];
+          setPendingRequests(rawRequests.map(normalizeOnboardingRequest));
         }
       } else if (userData?.role === 'hr') {
         // HR sees all their own requests
@@ -323,7 +354,8 @@ export default function EmployeesPage() {
 
         if (response.ok) {
           const data = await response.json();
-          setMyRequests(data.requests || []);
+          const rawRequests = Array.isArray(data.requests) ? data.requests : Array.isArray(data) ? data : [];
+          setMyRequests(rawRequests.map(normalizeOnboardingRequest));
         }
       }
     } catch (error) {
@@ -400,6 +432,7 @@ export default function EmployeesPage() {
         const requestData = {
           email: formData.email,
           name: formData.name,
+          last_name: formData.lastName,
           role: formData.role,
           department: formData.department,
           designation: formData.designation,
@@ -431,6 +464,7 @@ export default function EmployeesPage() {
         const requestData = {
           email: formData.email,
           name: formData.name,
+          last_name: formData.lastName,
           password: formData.password,
           role: formData.role,
           department: formData.department,
@@ -477,6 +511,7 @@ export default function EmployeesPage() {
       const updateData = canEditAll
         ? {
           name: formData.name,
+          last_name: formData.lastName,
           role: formData.role,
           department: formData.department,
           designation: formData.designation,
@@ -485,6 +520,7 @@ export default function EmployeesPage() {
         }
         : {
           name: formData.name,
+          last_name: formData.lastName,
           phone: formData.phone,
         };
 
@@ -550,6 +586,7 @@ export default function EmployeesPage() {
     setFormData({
       email: '',
       name: '',
+      lastName: '',
       password: '',
       role: 'employee',
       department: '',
@@ -564,6 +601,7 @@ export default function EmployeesPage() {
     setFormData({
       email: employee.email,
       name: employee.name,
+      lastName: employee.lastName || '',
       role: employee.role,
       department: employee.department,
       designation: employee.designation,
@@ -642,7 +680,7 @@ export default function EmployeesPage() {
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input
-                      placeholder="Search by name or email..."
+                      placeholder="Search by name, last name, or email..."
                       value={searchQuery}
                       onChange={(e) => {
                         setSearchQuery(e.target.value);
@@ -696,7 +734,7 @@ export default function EmployeesPage() {
                       <TableBody>
                         {employees.map((employee) => (
                           <TableRow key={employee.uid}>
-                            <TableCell className="font-medium">{employee.name}</TableCell>
+                            <TableCell className="font-medium">{getFullName(employee.name, employee.lastName)}</TableCell>
                             <TableCell>{employee.email}</TableCell>
                             <TableCell>{employee.department || '-'}</TableCell>
                             <TableCell>{employee.designation || '-'}</TableCell>
@@ -854,7 +892,7 @@ export default function EmployeesPage() {
                           <div className="space-y-4">
                             <div className="flex items-start justify-between">
                               <div>
-                                <h3 className="font-semibold text-lg">{reportee.name}</h3>
+                                <h3 className="font-semibold text-lg">{getFullName(reportee.name, reportee.lastName)}</h3>
                                 <p className="text-sm text-gray-600">{reportee.designation}</p>
                                 <p className="text-sm text-gray-500">{reportee.department}</p>
                               </div>
@@ -954,7 +992,7 @@ export default function EmployeesPage() {
                           <div className="space-y-4">
                             <div className="flex items-start justify-between">
                               <div>
-                                <h3 className="font-semibold text-lg">{request.name}</h3>
+                                <h3 className="font-semibold text-lg">{getFullName(request.name, request.lastName)}</h3>
                                 <p className="text-sm text-gray-600 dark:text-gray-400">{request.email}</p>
                                 <Badge className="mt-2">{request.role}</Badge>
                               </div>
@@ -1023,7 +1061,7 @@ export default function EmployeesPage() {
                                   <AlertDialogHeader>
                                     <AlertDialogTitle>Delete Onboarding Request</AlertDialogTitle>
                                     <AlertDialogDescription>
-                                      Are you sure you want to delete this onboarding request for {request.name}? This action cannot be undone.
+                                      Are you sure you want to delete this onboarding request for {getFullName(request.name, request.lastName)}? This action cannot be undone.
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
@@ -1096,7 +1134,7 @@ export default function EmployeesPage() {
                           <div className="space-y-4">
                             <div className="flex items-start justify-between">
                               <div>
-                                <h3 className="font-semibold text-lg">{request.name}</h3>
+                                <h3 className="font-semibold text-lg">{getFullName(request.name, request.lastName)}</h3>
                                 <p className="text-sm text-gray-600 dark:text-gray-400">{request.email}</p>
                                 <Badge className="mt-2">{request.role}</Badge>
                               </div>
@@ -1148,7 +1186,7 @@ export default function EmployeesPage() {
                                   <AlertDialogHeader>
                                     <AlertDialogTitle>Approve Onboarding Request</AlertDialogTitle>
                                     <AlertDialogDescription>
-                                      This will create a new employee account for {request.name}. A temporary password will be generated and sent to their email.
+                                      This will create a new employee account for {getFullName(request.name, request.lastName)}. A temporary password will be generated and sent to their email.
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
@@ -1237,12 +1275,22 @@ export default function EmployeesPage() {
           <div className="p-6 space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="create-name">Full Name *</Label>
+                <Label htmlFor="create-name">First Name *</Label>
                 <Input
                   id="create-name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="John Doe"
+                  placeholder="John"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="create-last-name">Last Name</Label>
+                <Input
+                  id="create-last-name"
+                  value={formData.lastName}
+                  onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                  placeholder="Doe"
                 />
               </div>
 
@@ -1342,7 +1390,7 @@ export default function EmployeesPage() {
                     <SelectItem value="none">None</SelectItem>
                     {managers.map(manager => (
                       <SelectItem key={manager.uid} value={manager.uid}>
-                        {manager.name} - {manager.role}
+                        {getFullName(manager.name, manager.lastName)} - {manager.role}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1381,17 +1429,26 @@ export default function EmployeesPage() {
             <div className="p-6 space-y-5">
               <div className="p-4 bg-gray-50 border border-gray-100 rounded-lg">
                 <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Editing</p>
-                <p className="font-semibold text-gray-900 mt-1">{editingEmployee.name}</p>
+                <p className="font-semibold text-gray-900 mt-1">{getFullName(editingEmployee.name, editingEmployee.lastName)}</p>
                 <p className="text-sm text-gray-500">{editingEmployee.email}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-name">Full Name *</Label>
+                  <Label htmlFor="edit-name">First Name *</Label>
                   <Input
                     id="edit-name"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-last-name">Last Name</Label>
+                  <Input
+                    id="edit-last-name"
+                    value={formData.lastName}
+                    onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                   />
                 </div>
 
@@ -1459,7 +1516,7 @@ export default function EmployeesPage() {
                           <SelectItem value="none">None</SelectItem>
                           {managers.map(manager => (
                             <SelectItem key={manager.uid} value={manager.uid}>
-                              {manager.name} - {manager.role}
+                              {getFullName(manager.name, manager.lastName)} - {manager.role}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1495,7 +1552,7 @@ export default function EmployeesPage() {
             <div className="p-6 space-y-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <h2 className="text-xl font-bold text-gray-900">{viewingEmployee.name}</h2>
+                  <h2 className="text-xl font-bold text-gray-900">{getFullName(viewingEmployee.name, viewingEmployee.lastName)}</h2>
                   <p className="text-sm text-gray-600 mt-0.5">{viewingEmployee.designation}</p>
                   <p className="text-xs text-gray-500">{viewingEmployee.department}</p>
                 </div>

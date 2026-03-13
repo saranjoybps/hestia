@@ -40,7 +40,7 @@ const navItems: NavItem[] = [
   { title: 'Leave Requests', href: '/leaves', icon: FileText, group: 'Work' },
   { title: 'Shifts', href: '/dashboard/shifts', icon: Clock, group: 'Work' },
   { title: 'Tasks', href: '/tasks', icon: CheckSquare, group: 'Work' },
-  { title: 'Performance', href: '/performance', icon: TrendingUp, group: 'Work' },
+  { title: 'Performance', href: '/performance', icon: TrendingUp, roles: ['director', 'manager', 'lead', 'hr'], group: 'Work' },
   { title: 'Employees', href: '/dashboard/employees', icon: UserPlus, roles: ['manager', 'director', 'hr'], group: 'Manage' },
   { title: 'Documents', href: '/documents', icon: FolderOpen, roles: ['director', 'hr'], group: 'Manage' },
   { title: 'Announcements', href: '/announcements', icon: Megaphone, group: 'Manage' },

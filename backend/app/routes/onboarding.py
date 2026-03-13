@@ -1,11 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from app.dependencies import db, get_current_user, require_role
 from app.models import OnboardingRequestCreate, OnboardingRequestUpdate, OnboardingRequestResponse
+from app.services.zoho_smtp import send_onboarding_email
 from datetime import datetime
 from typing import Optional
 from firebase_admin import auth as firebase_auth
 
 router = APIRouter(prefix="/onboarding", tags=["Onboarding"])
+
+def build_full_name(first_name: Optional[str], last_name: Optional[str]) -> str:
+    parts = [part for part in [first_name, last_name] if part]
+    return " ".join(parts)
 
 
 @router.post("/requests", status_code=status.HTTP_201_CREATED)
@@ -185,17 +190,19 @@ async def approve_onboarding_request(
         try:
             # Generate temporary password (user will reset on first login)
             temp_password = f"TempPass@{datetime.utcnow().strftime('%Y%m%d')}"
-            
+            display_name = build_full_name(request_data.get("name"), request_data.get("last_name")) or request_data.get("name")
+
             firebase_user = firebase_auth.create_user(
                 email=request_data.get("email"),
                 password=temp_password,
-                display_name=request_data.get("name")
+                display_name=display_name
             )
             
             # Create user document in Firestore
             user_doc = {
                 "email": request_data.get("email"),
                 "name": request_data.get("name"),
+                "last_name": request_data.get("last_name"),
                 "phone": request_data.get("phone"),
                 "role": request_data.get("role"),
                 "department": request_data.get("department"),
@@ -217,7 +224,25 @@ async def approve_onboarding_request(
                 "reviewed_by_name": current_user.get("name"),
                 "reviewed_at": datetime.utcnow(),
             })
-            
+
+            # Send onboarding email with credentials
+            try:
+                send_onboarding_email(
+                    to_email=request_data.get("email"),
+                    employee_name=display_name,
+                    password=temp_password,
+                    role=request_data.get("role"),
+                    department=request_data.get("department"),
+                    designation=request_data.get("designation"),
+                    manager=request_data.get("manager_id"),
+                    lead=request_data.get("lead_id"),
+                )
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to send onboarding email: {str(e)}"
+                )
+
             return {
                 "message": "Onboarding request approved and user created successfully",
                 "user_id": firebase_user.uid,
@@ -342,3 +367,6 @@ async def delete_onboarding_request(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error deleting onboarding request: {str(e)}"
         )
+
+
+

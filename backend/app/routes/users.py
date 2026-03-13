@@ -2,11 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from firebase_admin import auth as firebase_auth
 from app.dependencies import db, get_current_user, require_role
 from app.services.audit_log import log_audit_event
+from app.services.zoho_smtp import send_onboarding_email
 from app.models import UserCreate, UserUpdate, UserResponse
 from datetime import datetime
 from typing import Optional
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+def build_full_name(first_name: Optional[str], last_name: Optional[str]) -> str:
+    parts = [part for part in [first_name, last_name] if part]
+    return " ".join(parts)
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -27,16 +32,18 @@ async def register_user(
             )
         
         # Create user in Firebase Auth
+        display_name = build_full_name(user_data.name, user_data.last_name) or user_data.name
         firebase_user = firebase_auth.create_user(
             email=user_data.email,
             password=user_data.password,
-            display_name=user_data.name
+            display_name=display_name
         )
         
         # Prepare user document for Firestore
         user_doc = {
             "email": user_data.email,
             "name": user_data.name,
+            "last_name": user_data.last_name,
             "phone": user_data.phone,
             "role": user_data.role,
             "department": user_data.department,
@@ -52,7 +59,23 @@ async def register_user(
         # Save to Firestore
         db.collection("users").document(firebase_user.uid).set(user_doc)
         
-        # TODO: Send welcome email
+        # Send onboarding email with credentials
+        try:
+            send_onboarding_email(
+                to_email=user_data.email,
+                employee_name=display_name,
+                password=user_data.password,
+                role=user_data.role,
+                department=user_data.department,
+                designation=user_data.designation,
+                manager=user_data.manager_id,
+                lead=user_data.lead_id,
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to send onboarding email: {str(e)}"
+            )
         
         user_doc["uid"] = firebase_user.uid
 
@@ -65,7 +88,7 @@ async def register_user(
             action="employee_created",
             description=(
                 f"{current_user.get('name', 'Someone')} created an employee account for "
-                f"{user_doc.get('name', firebase_user.uid)}."
+                f"{display_name or user_doc.get('name', firebase_user.uid)}."
             ),
             result="success",
             target_type="user",
@@ -132,7 +155,12 @@ async def list_users(
                 user_data["uid"] = user.id
                 
                 # Apply search filter
-                if search.lower() in user_data.get("name", "").lower() or \
+                name = user_data.get("name", "")
+                last_name = user_data.get("last_name", "")
+                full_name = build_full_name(name, last_name)
+                if search.lower() in name.lower() or \
+                   search.lower() in last_name.lower() or \
+                   search.lower() in full_name.lower() or \
                    search.lower() in user_data.get("email", "").lower():
                     user_list.append(user_data)
             
@@ -282,7 +310,7 @@ async def update_user(
         
         # If not admin, restrict fields
         if not is_admin:
-            allowed_fields = ["name", "phone"]
+            allowed_fields = ["name", "last_name", "phone"]
             update_data = {k: v for k, v in update_data.items() if k in allowed_fields}
         
         update_data["updated_at"] = datetime.utcnow().isoformat()
@@ -426,3 +454,6 @@ async def get_reportees(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching reportees: {str(e)}"
         )
+
+
+

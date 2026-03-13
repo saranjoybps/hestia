@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import {
   Table,
   TableBody,
@@ -38,6 +39,8 @@ export default function AuditLogsPage() {
   const { userData, user } = useAuth();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
 
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -202,7 +205,14 @@ export default function AuditLogsPage() {
                 </TableHeader>
                 <TableBody>
                   {paginatedLogs.map((log) => (
-                    <TableRow key={log.id}>
+                    <TableRow
+                      key={log.id}
+                      className="cursor-pointer hover:bg-gray-50"
+                      onClick={() => {
+                        setSelectedLog(log);
+                        setShowDetails(true);
+                      }}
+                    >
                       <TableCell className="whitespace-nowrap">
                         {new Date(log.created_at).toLocaleString()}
                       </TableCell>
@@ -214,11 +224,8 @@ export default function AuditLogsPage() {
                       </TableCell>
                       <TableCell className="font-medium">{log.module || '-'}</TableCell>
                       <TableCell className="font-medium">{log.action}</TableCell>
-                      <TableCell
-                        className="max-w-[360px] truncate"
-                        title={log.description || ''}
-                      >
-                        {log.description || '-'}
+                      <TableCell className="max-w-[360px]">
+                        <span className="block truncate">{log.description || '-'}</span>
                       </TableCell>
                       <TableCell>{log.result || '-'}</TableCell>
                     </TableRow>
@@ -263,6 +270,71 @@ export default function AuditLogsPage() {
           )}
         </CardContent>
       </Card>
+      <Sheet
+        open={showDetails}
+        onOpenChange={(open) => {
+          setShowDetails(open);
+          if (!open) setSelectedLog(null);
+        }}
+      >
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6">
+          <SheetHeader>
+            <SheetTitle>Audit Log Details</SheetTitle>
+            <SheetDescription>Full details for the selected record</SheetDescription>
+          </SheetHeader>
+
+          <div className="mt-6 space-y-4 text-sm">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500">When</p>
+              <p className="font-medium text-gray-900">
+                {selectedLog ? new Date(selectedLog.created_at).toLocaleString() : '-'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500">Who</p>
+              <p className="font-medium text-gray-900">{selectedLog?.actor_name || 'Unknown'}</p>
+              <p className="text-xs text-gray-500">{selectedLog?.actor_email || selectedLog?.actor_id || '-'}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Module</p>
+                <p className="font-medium text-gray-900">{selectedLog?.module || '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Action</p>
+                <p className="font-medium text-gray-900">{selectedLog?.action || '-'}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Result</p>
+                <p className="font-medium text-gray-900">{selectedLog?.result || '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Target</p>
+                <p className="font-medium text-gray-900">{selectedLog?.target_type || '-'}</p>
+                <p className="text-xs text-gray-500">{selectedLog?.target_id || '-'}</p>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500">What Happened</p>
+              <p className="mt-2 whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 p-3 text-gray-900">
+                {selectedLog?.description || '-'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500">Metadata</p>
+              <pre className="mt-2 overflow-auto rounded-md border border-gray-200 bg-white p-3 text-xs text-gray-800">
+                {selectedLog?.metadata ? JSON.stringify(selectedLog.metadata, null, 2) : '-'}
+              </pre>
+            </div>
+          </div>
+        </div>
+      </SheetContent>
+      </Sheet>
     </div>
   );
 }
+
+
