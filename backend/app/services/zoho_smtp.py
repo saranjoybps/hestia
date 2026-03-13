@@ -35,3 +35,52 @@ def send_email_smtp(
         server.starttls()
         server.login(smtp_user, smtp_pass)
         server.send_message(msg)
+
+
+def send_onboarding_email(
+    *,
+    to_email: str,
+    employee_name: str,
+    password: str,
+    role: Optional[str] = None,
+    department: Optional[str] = None,
+    designation: Optional[str] = None,
+    manager: Optional[str] = None,
+    lead: Optional[str] = None,
+):
+    """Send onboarding email with credentials and employee details."""
+    subject = "Welcome to JoyBps - Your JoyHR Access"
+
+    details_lines = [
+        f"Name: {employee_name}",
+        f"Email: {to_email}",
+    ]
+
+    if role:
+        details_lines.append(f"Role: {role}")
+    if department:
+        details_lines.append(f"Department: {department}")
+    if designation:
+        details_lines.append(f"Designation: {designation}")
+    if manager:
+        details_lines.append(f"Manager: {manager}")
+    if lead:
+        details_lines.append(f"Lead: {lead}")
+
+    details_block = "\n".join(details_lines)
+
+    body = (
+        f"Hello {employee_name},\n\n"
+        "Welcome to JoyBps. Your JoyHR account has been created.\n\n"
+        "Login URL: https://hr.joyrts.com/\n"
+        f"Username: {to_email}\n"
+        f"Temporary Password: {password}\n\n"
+        "Employee Details:\n"
+        f"{details_block}\n\n"
+        "Please change your password after your first login. If you need any help,"
+        " please contact HR.\n\n"
+        "Regards,\n"
+        "JoyBps"
+    )
+
+    send_email_smtp(to_email=to_email, subject=subject, body=body)

@@ -8,6 +8,7 @@ class UserBase(BaseModel):
     """Base user model"""
     email: EmailStr
     name: str
+    last_name: Optional[str] = None
     phone: Optional[str] = None
     role: Literal["employee", "lead", "manager", "hr", "director"] = "employee"
     department: Optional[str] = None
@@ -26,6 +27,7 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     """User update model"""
     name: Optional[str] = None
+    last_name: Optional[str] = None
     phone: Optional[str] = None
     role: Optional[Literal["employee", "lead", "manager", "hr", "director"]] = None
     department: Optional[str] = None
@@ -308,6 +310,7 @@ class OnboardingRequestCreate(BaseModel):
     """Create employee onboarding request"""
     email: EmailStr
     name: str
+    last_name: Optional[str] = None
     phone: Optional[str] = None
     role: Literal["employee", "lead", "manager", "hr", "director"] = "employee"
     department: Optional[str] = None
@@ -328,6 +331,7 @@ class OnboardingRequestResponse(BaseModel):
     id: str
     email: EmailStr
     name: str
+    last_name: Optional[str] = None
     phone: Optional[str] = None
     role: str
     department: Optional[str] = None

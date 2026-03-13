@@ -122,11 +122,13 @@ export default function PerformancePage() {
   const isLead = userData?.role === 'lead';
   const isManager = userData?.role === 'manager' || userData?.role === 'director';
   const isHR = userData?.role === 'hr' || userData?.role === 'director';
+  const isDirector = userData?.role === 'director';
+  const canAccess = isLead || isManager || isHR || isDirector;
   const canCreateReview = isLead || isManager || isHR;
-  const canApprove = isManager || isHR;
+  const canApprove = isDirector;
 
   useEffect(() => {
-    if (user) {
+    if (user && canAccess) {
       fetchReviews();
       if (canCreateReview) {
         fetchEmployees();
@@ -138,7 +140,7 @@ export default function PerformancePage() {
         fetchStats();
       }
     }
-  }, [user]);
+  }, [user, canAccess, canCreateReview, canApprove, isHR]);
 
   const fetchReviews = async () => {
     try {
@@ -168,10 +170,16 @@ export default function PerformancePage() {
 
       if (response.ok) {
         const data = await response.json();
-        setPendingApprovals(data);
+        const approvals = Array.isArray(data) ? data : (data?.reviews || []);
+        setPendingApprovals(approvals);
+      } else {
+        const error = await response.json().catch(() => null);
+        const message = error?.detail || 'Failed to load pending approvals';
+        toast.error(message);
       }
     } catch (error) {
       console.error('Error fetching pending approvals:', error);
+      toast.error('Failed to load pending approvals');
     }
   };
 
@@ -381,6 +389,19 @@ export default function PerformancePage() {
     );
   };
 
+  if (userData && !canAccess) {
+    return (
+      <div className="space-y-6">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+          <h1 className="text-2xl font-bold text-red-900">Access denied</h1>
+          <p className="mt-2 text-sm text-red-800">
+            You don’t have permission to view the Performance module.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -398,7 +419,15 @@ export default function PerformancePage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="reviews" className="space-y-4">
+      <Tabs
+        defaultValue="reviews"
+        className="space-y-4"
+        onValueChange={(value) => {
+          if (value === 'approvals' && canApprove) {
+            fetchPendingApprovals();
+          }
+        }}
+      >
         <TabsList>
           <TabsTrigger value="reviews">All Reviews ({reviews.length})</TabsTrigger>
           {canApprove && (
@@ -499,7 +528,7 @@ export default function PerformancePage() {
             <Card>
               <CardHeader>
                 <CardTitle>Pending Approvals</CardTitle>
-                <CardDescription>Reviews awaiting manager approval</CardDescription>
+                <CardDescription>Reviews awaiting director approval</CardDescription>
               </CardHeader>
               <CardContent>
                 {pendingApprovals.length > 0 ? (
@@ -862,7 +891,7 @@ export default function PerformancePage() {
             {isLead && (
               <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-sm text-yellow-800">
-                  <strong>Note:</strong> As a Lead, your reviews will require Manager approval before being finalized.
+                  <strong>Note:</strong> As a Lead, your reviews will require Director approval before being finalized.
                 </p>
               </div>
             )}
