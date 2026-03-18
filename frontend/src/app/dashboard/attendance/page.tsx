@@ -164,16 +164,44 @@ export default function AttendancePage() {
   }, [user, selectedEmployee, filterStartDate, filterEndDate, teamMembers]);
 
   const fetchTeamMembers = async () => {
+    // Fetch full reporting tree (all nested reportees) so managers/directors can mark for every subordinate.
+    const fetchReportees = async (uid: string, token: string | undefined) => {
+      if (!token) return [];
+      try {
+        const res = await fetch(`${API_BASE_URL}/users/${uid}/reportees`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!res.ok) return [];
+        return await res.json();
+      } catch (err) {
+        console.error(`Error fetching reportees for ${uid}:`, err);
+        return [];
+      }
+    };
+
     try {
       const token = await user?.getIdToken();
-      const response = await fetch(`${API_BASE_URL}/users/${userData?.uid}/reportees`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
+      if (!token || !userData?.uid) return;
 
-      if (response.ok) {
-        const data = await response.json();
-        setTeamMembers(data);
+      const allMembers: TeamMember[] = [];
+      const visited = new Set<string>();
+      const queue: string[] = [userData.uid];
+
+      while (queue.length > 0) {
+        const current = queue.shift();
+        if (!current || visited.has(current)) continue;
+        visited.add(current);
+
+        const reportees: TeamMember[] = await fetchReportees(current, token);
+        reportees.forEach((member) => {
+          if (!visited.has(member.uid)) {
+            allMembers.push(member);
+            queue.push(member.uid);
+          }
+        });
       }
+
+      setTeamMembers(allMembers);
     } catch (error) {
       console.error('Error fetching team members:', error);
     }

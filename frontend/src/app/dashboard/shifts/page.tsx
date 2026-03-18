@@ -136,11 +136,15 @@ export default function ShiftsPage() {
   });
 
   // Permissions
-  const isLead = userData?.role === 'lead' || userData?.role === 'manager' || userData?.role === 'director';
-  const isManager = userData?.role === 'manager' || userData?.role === 'director';
-  const isDirector = userData?.role === 'director';
-  const canCreateShift = isLead;
-  const canApprove = isManager;
+  const role = userData?.role;
+  const isLead = role === 'lead';
+  const isManager = role === 'manager';
+  const isDirector = role === 'director';
+  const isHR = role === 'hr';
+  const isSuperAdmin = role === 'superadmin';
+
+  const canCreateShift = isLead || isManager || isDirector || isHR || isSuperAdmin;
+  const canApprove = isManager || isDirector || isSuperAdmin;
 
   useEffect(() => {
     if (user) {
@@ -157,24 +161,54 @@ export default function ShiftsPage() {
   const fetchReportees = async () => {
     try {
       const token = await user?.getIdToken();
-      const response = await fetch(`${API_BASE_URL}/users?limit=500`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
+      if (!token || !userData?.uid) return;
 
-      if (response.ok) {
-        const data = await response.json();
-        const users = data.users || data;
-
-        // Filter to get reportees based on role
-        let filteredUsers: Employee[] = [];
-        if (userData?.role === 'lead') {
-          filteredUsers = users.filter((u: Employee) => u.uid !== userData.uid);
-        } else if (userData?.role === 'manager' || userData?.role === 'director') {
-          filteredUsers = users.filter((u: Employee) => u.uid !== userData.uid);
+      // For managers/directors/superadmins: load everyone (minus self)
+      if (isManager || isDirector || isSuperAdmin) {
+        const response = await fetch(`${API_BASE_URL}/users?limit=500`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const users: Employee[] = data.users || data;
+          setReportees(users.filter((u) => u.uid !== userData.uid));
         }
-
-        setReportees(filteredUsers);
+        return;
       }
+
+      // For leads/HR: load full downstream reporting tree only
+      const fetchReporteesFor = async (uid: string) => {
+        try {
+          const res = await fetch(`${API_BASE_URL}/users/${uid}/reportees`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          if (!res.ok) return [];
+          return await res.json();
+        } catch (err) {
+          console.error(`Error fetching reportees for ${uid}:`, err);
+          return [];
+        }
+      };
+
+      const all: Employee[] = [];
+      const visited = new Set<string>();
+      const queue: string[] = [userData.uid];
+
+      while (queue.length > 0) {
+        const current = queue.shift();
+        if (!current || visited.has(current)) continue;
+        visited.add(current);
+
+        const children: Employee[] = await fetchReporteesFor(current);
+        children.forEach((emp) => {
+          if (!visited.has(emp.uid)) {
+            all.push(emp);
+            queue.push(emp.uid);
+          }
+        });
+      }
+
+      setReportees(all);
     } catch (error) {
       console.error('Error fetching reportees:', error);
     }

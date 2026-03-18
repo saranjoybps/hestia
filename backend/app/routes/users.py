@@ -436,14 +436,30 @@ async def get_reportees(
         reportees = []
         
         if user_role == "lead":
-            query = db.collection("users").where("lead_id", "==", user_id)
+            # Support both legacy manager_id linkage and lead_id linkage for leads
+            lead_query = db.collection("users").where("lead_id", "==", user_id)
+            manager_query = db.collection("users").where("manager_id", "==", user_id)
+
+            user_map = {}
+            for doc in lead_query.stream():
+                user_data = doc.to_dict()
+                user_data["uid"] = doc.id
+                user_map[doc.id] = UserResponse(**user_data)
+            for doc in manager_query.stream():
+                if doc.id in user_map:
+                    continue
+                user_data = doc.to_dict()
+                user_data["uid"] = doc.id
+                user_map[doc.id] = UserResponse(**user_data)
+
+            reportees = list(user_map.values())
         elif user_role in ["manager", "director"]:
             query = db.collection("users").where("manager_id", "==", user_id)
-        
-        for doc in query.stream():
-            user_data = doc.to_dict()
-            user_data["uid"] = doc.id
-            reportees.append(UserResponse(**user_data))
+
+            for doc in query.stream():
+                user_data = doc.to_dict()
+                user_data["uid"] = doc.id
+                reportees.append(UserResponse(**user_data))
         
         return reportees
         
