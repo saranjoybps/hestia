@@ -141,7 +141,7 @@ export default function ShiftsPage() {
   const isManager = role === 'manager';
   const isDirector = role === 'director';
   const isHR = role === 'hr';
-  const isSuperAdmin = role === 'superadmin';
+  const isSuperAdmin = role === 'super_admin';
 
   const canCreateShift = isLead || isManager || isDirector || isHR || isSuperAdmin;
   const canApprove = isManager || isDirector || isSuperAdmin;
