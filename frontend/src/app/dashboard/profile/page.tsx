@@ -13,6 +13,8 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { User, Shield } from 'lucide-react';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+
 export default function ProfilePage() {
   const { userData, user } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -29,6 +31,33 @@ export default function ProfilePage() {
     newPassword: '',
     confirmPassword: '',
   });
+  const [reportingManagerName, setReportingManagerName] = useState<string>('-');
+
+  const normalizeDateInput = (value?: string) => {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0];
+    }
+    const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    return match ? match[1] : '';
+  };
+
+  const getUserDateOfJoining = () => {
+    const raw = (userData as any)?.dateOfJoining ?? (userData as any)?.date_of_joining;
+    return typeof raw === 'string' ? raw : raw?.toString?.();
+  };
+
+  const formatDateDisplay = (value?: string) => {
+    if (!value) return 'N/A';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 'N/A';
+    return parsed.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
 
   useEffect(() => {
     if (userData) {
@@ -38,10 +67,53 @@ export default function ProfilePage() {
         phone: userData.phone || '',
         department: userData.department || '',
         designation: userData.designation || '',
-        dateOfJoining: userData.dateOfJoining || '',
+        dateOfJoining: normalizeDateInput(getUserDateOfJoining()),
       });
     }
   }, [userData]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadReportingManager = async () => {
+      const reportingManagerId =
+        userData?.manager_id ||
+        userData?.lead_id ||
+        userData?.managerId ||
+        userData?.leadId;
+
+      if (!reportingManagerId) {
+        if (isActive) setReportingManagerName('-');
+        return;
+      }
+
+      try {
+        const token = await user?.getIdToken();
+        if (!token) {
+          if (isActive) setReportingManagerName('-');
+          return;
+        }
+
+        const response = await fetch(`${API_BASE_URL}/users/${reportingManagerId}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+        if (!response.ok) {
+          if (isActive) setReportingManagerName('-');
+          return;
+        }
+
+        const managerData = await response.json();
+        const managerName = managerData?.name || managerData?.email;
+        if (isActive) setReportingManagerName(managerName || '-');
+      } catch {
+        if (isActive) setReportingManagerName('-');
+      }
+    };
+
+    loadReportingManager();
+    return () => { isActive = false; };
+  }, [userData, user]);
 
   const getInitials = (name: string) => {
     return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
@@ -231,7 +303,7 @@ export default function ProfilePage() {
                               phone: userData.phone || '',
                               department: userData.department || '',
                               designation: userData.designation || '',
-                              dateOfJoining: userData.dateOfJoining || '',
+                              dateOfJoining: normalizeDateInput(getUserDateOfJoining()),
                             });
                           }
                         }}
@@ -349,6 +421,13 @@ export default function ProfilePage() {
                   <Separator />
 
                   <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Reporting Manager</p>
+                    <p className="text-gray-900 mt-1">{reportingManagerName || '-'}</p>
+                  </div>
+
+                  <Separator />
+
+                  <div>
                     <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Email</p>
                     <p className="text-gray-900 mt-1 break-all text-xs">{userData.email}</p>
                   </div>
@@ -357,13 +436,7 @@ export default function ProfilePage() {
 
                   <div>
                     <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Joined</p>
-                    <p className="text-gray-900 mt-1">
-                      {userData.dateOfJoining
-                        ? new Date(userData.dateOfJoining).toLocaleDateString('en-US', {
-                            year: 'numeric', month: 'short', day: 'numeric',
-                          })
-                        : 'N/A'}
-                    </p>
+                    <p className="text-gray-900 mt-1">{formatDateDisplay(getUserDateOfJoining())}</p>
                   </div>
                 </div>
               </div>

@@ -48,6 +48,7 @@ async def register_user(
             "role": user_data.role,
             "department": user_data.department,
             "designation": user_data.designation,
+            "dateOfJoining": user_data.dateOfJoining,
             "manager_id": user_data.manager_id,
             "lead_id": user_data.lead_id,
             "status": user_data.status,

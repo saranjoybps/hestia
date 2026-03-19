@@ -315,6 +315,7 @@ class OnboardingRequestCreate(BaseModel):
     role: Literal["employee", "lead", "manager", "hr", "director"] = "employee"
     department: Optional[str] = None
     designation: Optional[str] = None
+    dateOfJoining: Optional[str] = None
     manager_id: Optional[str] = None
     lead_id: Optional[str] = None
     notes: Optional[str] = None
@@ -336,6 +337,7 @@ class OnboardingRequestResponse(BaseModel):
     role: str
     department: Optional[str] = None
     designation: Optional[str] = None
+    dateOfJoining: Optional[str] = None
     manager_id: Optional[str] = None
     lead_id: Optional[str] = None
     notes: Optional[str] = None

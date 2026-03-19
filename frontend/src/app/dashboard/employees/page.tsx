@@ -208,6 +208,16 @@ export default function EmployeesPage() {
     return full || firstName || '';
   };
 
+  const normalizeDateInput = (value?: string) => {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0];
+    }
+    const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    return match ? match[1] : '';
+  };
+
   useEffect(() => {
     if (user) {
       fetchDepartments();
@@ -437,8 +447,9 @@ export default function EmployeesPage() {
           department: formData.department,
           designation: formData.designation,
           phone: formData.phone,
+          dateOfJoining: formData.dateOfJoining || null,
           manager_id: formData.managerId || null,
-          notes: `Date of Joining: ${formData.dateOfJoining || 'Not specified'}`,
+          notes: formData.dateOfJoining ? undefined : 'Date of Joining: Not specified',
         };
 
         const response = await fetch(`${API_BASE_URL}/onboarding/requests`, {
@@ -470,6 +481,7 @@ export default function EmployeesPage() {
           department: formData.department,
           designation: formData.designation,
           phone: formData.phone,
+          dateOfJoining: formData.dateOfJoining || null,
           manager_id: formData.managerId || null,
           lead_id: null,
           status: 'active'
@@ -516,6 +528,7 @@ export default function EmployeesPage() {
           department: formData.department,
           designation: formData.designation,
           phone: formData.phone,
+          dateOfJoining: formData.dateOfJoining || null,
           manager_id: formData.managerId || null,
         }
         : {
@@ -606,7 +619,7 @@ export default function EmployeesPage() {
       department: employee.department,
       designation: employee.designation,
       phone: employee.phone || '',
-      dateOfJoining: employee.dateOfJoining || '',
+      dateOfJoining: normalizeDateInput(employee.dateOfJoining),
       managerId: employee.managerId,
     });
     setShowEditDialog(true);
@@ -1521,6 +1534,16 @@ export default function EmployeesPage() {
                           ))}
                         </SelectContent>
                       </Select>
+                    </div>
+
+                    <div className="space-y-2 col-span-2">
+                      <Label htmlFor="edit-joining-date">Date of Joining</Label>
+                      <Input
+                        id="edit-joining-date"
+                        type="date"
+                        value={formData.dateOfJoining}
+                        onChange={(e) => setFormData({ ...formData, dateOfJoining: e.target.value })}
+                      />
                     </div>
                   </>
                 )}
