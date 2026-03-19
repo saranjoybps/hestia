@@ -111,7 +111,7 @@ export default function TasksPage() {
         fetchEmployees();
       }
     }
-  }, [user]);
+  }, [user, canCreate, userData?.uid]);
 
   const fetchTasks = async () => {
     try {
@@ -121,8 +121,16 @@ export default function TasksPage() {
       });
 
       if (response.ok) {
-        const data = await response.json();
-        setTasks(data);
+        const data: Task[] = await response.json();
+        if (!userData?.uid) {
+          setTasks([]);
+          return;
+        }
+        const canViewAll = ['lead', 'manager', 'director', 'hr'].includes(userData?.role || '');
+        const visibleTasks = canViewAll
+          ? data
+          : data.filter((task) => task.assigneeId === userData.uid);
+        setTasks(visibleTasks);
       }
     } catch (error) {
       console.error('Error fetching tasks:', error);

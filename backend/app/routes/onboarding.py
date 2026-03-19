@@ -207,6 +207,7 @@ async def approve_onboarding_request(
                 "role": request_data.get("role"),
                 "department": request_data.get("department"),
                 "designation": request_data.get("designation"),
+                "dateOfJoining": request_data.get("dateOfJoining"),
                 "manager_id": request_data.get("manager_id"),
                 "lead_id": request_data.get("lead_id"),
                 "status": "active",

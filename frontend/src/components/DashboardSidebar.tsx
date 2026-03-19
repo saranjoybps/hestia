@@ -121,7 +121,7 @@ export default function DashboardSidebar() {
 
       {/* Footer */}
       <div className="px-4 py-3 border-t dark:border-gray-800">
-        <p className="text-xs text-gray-400">© 2026 Joyrts · v1.0.1</p>
+        <p className="text-xs text-gray-400">© 2026 Joyrts · v1.0.2</p>
       </div>
     </div>
   );

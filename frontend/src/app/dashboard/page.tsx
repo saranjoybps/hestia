@@ -45,13 +45,6 @@ export default function DashboardPage() {
   useEffect(() => {
     if (user) {
       fetchDashboardData();
-
-      // Auto-refresh every 30 seconds
-      const interval = setInterval(() => {
-        fetchDashboardData();
-      }, 30000);
-
-      return () => clearInterval(interval);
     }
   }, [user]);
 
@@ -227,7 +220,7 @@ export default function DashboardPage() {
             Overview of your HR management system
           </p>
           <p className="text-xs text-gray-400 mt-1">
-            Last updated: {format(lastRefresh, 'MMM dd, yyyy HH:mm:ss')} • Auto-refreshes every 30s
+            Last updated: {format(lastRefresh, 'MMM dd, yyyy HH:mm:ss')} • Click Refresh to update
           </p>
         </div>
         <Button

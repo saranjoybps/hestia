@@ -48,6 +48,7 @@ async def register_user(
             "role": user_data.role,
             "department": user_data.department,
             "designation": user_data.designation,
+            "dateOfJoining": user_data.dateOfJoining,
             "manager_id": user_data.manager_id,
             "lead_id": user_data.lead_id,
             "status": user_data.status,
@@ -436,14 +437,30 @@ async def get_reportees(
         reportees = []
         
         if user_role == "lead":
-            query = db.collection("users").where("lead_id", "==", user_id)
+            # Support both legacy manager_id linkage and lead_id linkage for leads
+            lead_query = db.collection("users").where("lead_id", "==", user_id)
+            manager_query = db.collection("users").where("manager_id", "==", user_id)
+
+            user_map = {}
+            for doc in lead_query.stream():
+                user_data = doc.to_dict()
+                user_data["uid"] = doc.id
+                user_map[doc.id] = UserResponse(**user_data)
+            for doc in manager_query.stream():
+                if doc.id in user_map:
+                    continue
+                user_data = doc.to_dict()
+                user_data["uid"] = doc.id
+                user_map[doc.id] = UserResponse(**user_data)
+
+            reportees = list(user_map.values())
         elif user_role in ["manager", "director"]:
             query = db.collection("users").where("manager_id", "==", user_id)
-        
-        for doc in query.stream():
-            user_data = doc.to_dict()
-            user_data["uid"] = doc.id
-            reportees.append(UserResponse(**user_data))
+
+            for doc in query.stream():
+                user_data = doc.to_dict()
+                user_data["uid"] = doc.id
+                reportees.append(UserResponse(**user_data))
         
         return reportees
         
