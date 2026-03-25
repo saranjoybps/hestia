@@ -346,8 +346,9 @@ export default function TasksPage() {
     return colors[priority] || colors.medium;
   };
 
-  const isOverdue = (dueDate?: string) => {
+  const isOverdue = (dueDate?: string, status?: Task['status']) => {
     if (!dueDate) return false;
+    if (status === 'completed') return false;
     return isPast(parseISO(dueDate)) && new Date(dueDate).toDateString() !== new Date().toDateString();
   };
 
@@ -370,94 +371,86 @@ export default function TasksPage() {
     setDraggedTask(null);
   };
 
-  const TaskCard = ({ task }: { task: Task }) => (
-    <Card
-      className={`cursor-move hover:shadow-md transition-shadow ${getPriorityCardColor(task.priority)} mb-3`}
-      draggable
-      onDragStart={() => handleDragStart(task)}
-    >
-      <CardContent className="pt-4 pb-3 px-4">
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex-1">
-            <h4 className="font-semibold text-sm mb-1 line-clamp-2">{task.title}</h4>
-            <Badge className={`${getPriorityColor(task.priority)} text-xs`}>
-              {task.priority.toUpperCase()}
-            </Badge>
-          </div>
-          <GripVertical className="h-4 w-4 text-gray-400 flex-shrink-0" />
-        </div>
+  const TaskCard = ({ task }: { task: Task }) => {
+    const initials = task.assigneeName
+      ? task.assigneeName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+      : '?';
 
-        {task.description && (
-          <p className="text-xs text-gray-600 mb-3 line-clamp-2">{task.description}</p>
-        )}
-
-        <div className="space-y-2">
-          {task.dueDate && (
-            <div className={`flex items-center gap-1 text-xs ${isOverdue(task.dueDate) ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
-              <CalendarIcon className="h-3 w-3" />
-              {format(parseISO(task.dueDate), 'MMM dd, yyyy')}
-              {isOverdue(task.dueDate) && <span className="ml-1">(Overdue)</span>}
+    return (
+      <Card
+        className={`cursor-move hover:shadow-lg transition-all duration-150 ${getPriorityCardColor(task.priority)} mb-2 border border-slate-200 rounded-xl`}
+        draggable
+        onDragStart={() => handleDragStart(task)}
+      >
+        <CardContent className="px-2 py-1 h-[60px] flex flex-col justify-between space-y-1">
+          {/* Header: assignee avatar + name, task title as subtitle */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="h-8 w-8 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center text-xs font-semibold">
+                {initials}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-900 truncate">{task.assigneeName}</p>
+                <p className="text-xs text-slate-600 truncate">{task.title}</p>
+              </div>
             </div>
-          )}
-
-          <div className="flex items-center gap-1 text-xs text-gray-600">
-            <User className="h-3 w-3" />
-            {task.assigneeName}
+            <GripVertical className="h-4 w-4 text-slate-300 flex-shrink-0" />
           </div>
 
-          {task.attachments.length > 0 && (
-            <div className="flex items-center gap-1 text-xs text-gray-600">
-              <Paperclip className="h-3 w-3" />
-              {task.attachments.length} attachment{task.attachments.length > 1 ? 's' : ''}
-            </div>
-          )}
-        </div>
+          {/* Footer: due date left, actions right */}
+          <div className="flex items-center justify-between gap-2">
+            {task.dueDate ? (
+              <div className={`inline-flex items-center gap-2 text-[11px] px-2 py-1 rounded-full ${isOverdue(task.dueDate, task.status) ? 'bg-red-50 text-red-700' : 'bg-slate-50 text-slate-700'}`}>
+                <CalendarIcon className="h-3 w-3" />
+                <span>{format(parseISO(task.dueDate), 'MMM dd, yyyy')}</span>
+              </div>
+            ) : (
+              <span className="text-[11px] text-slate-500">No due date</span>
+            )}
 
-        <Separator className="my-3" />
-
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs flex-1"
-            onClick={() => {
-              setViewingTask(task);
-              setShowViewDialog(true);
-            }}
-          >
-            <Eye className="h-3 w-3 mr-1" />
-            View
-          </Button>
-          {(canCreate || task.assigneeId === userData?.uid) && (
-            <>
+            <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-7 text-xs flex-1"
-                onClick={() => openEditDialog(task)}
+                size="icon"
+                className="h-7 w-7 text-slate-600 hover:text-slate-900"
+                onClick={() => {
+                  setViewingTask(task);
+                  setShowViewDialog(true);
+                }}
               >
-                <Edit className="h-3 w-3 mr-1" />
-                Edit
+                <Eye className="h-4 w-4" />
               </Button>
-              {canCreate && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-                  onClick={() => {
-                    setDeletingTask(task);
-                    setShowDeleteDialog(true);
-                  }}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
+              {(canCreate || task.assigneeId === userData?.uid) && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-slate-600 hover:text-slate-900"
+                    onClick={() => openEditDialog(task)}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  {canCreate && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      onClick={() => {
+                        setDeletingTask(task);
+                        setShowDeleteDialog(true);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -647,9 +640,9 @@ export default function TasksPage() {
                 {viewingTask.dueDate && (
                   <div className="space-y-1">
                     <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Due Date</p>
-                    <div className={`flex items-center gap-2 mt-1 text-sm ${isOverdue(viewingTask.dueDate) ? 'text-red-600 font-semibold' : 'text-gray-700'}`}>
+                    <div className={`flex items-center gap-2 mt-1 text-sm ${isOverdue(viewingTask.dueDate, viewingTask.status) ? 'text-red-600 font-semibold' : 'text-gray-700'}`}>
                       <CalendarIcon className="h-4 w-4" />
-                      <span>{format(parseISO(viewingTask.dueDate), 'MMMM dd, yyyy')}{isOverdue(viewingTask.dueDate) && ' (Overdue)'}</span>
+                      <span>{format(parseISO(viewingTask.dueDate), 'MMMM dd, yyyy')}{isOverdue(viewingTask.dueDate, viewingTask.status) && ' (Overdue)'}</span>
                     </div>
                   </div>
                 )}

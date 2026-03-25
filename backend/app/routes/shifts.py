@@ -127,48 +127,71 @@ async def get_shifts(
 ):
     """
     Get shifts based on filters and user role.
-    - Employees see only their own shifts
-    - Leads see shifts they created
-    - Managers/Directors see shifts requiring their approval or all shifts
+    Visibility rules:
+    - Employee: only own shifts
+    - Lead: shifts for their reportees (lead_id match) + shifts they created
+    - Manager: shifts for their reportees (manager_id or lead_id match) + shifts they created
+    - HR/Director/Super Admin: all shifts
     """
     try:
+        user_role = current_user.get("role")
+        user_uid = current_user.get("uid")
+
         query = db.collection("shifts")
-        
-        # Role-based filtering
-        if current_user["role"] == "employee":
-            # Employees see only their own shifts
-            query = query.where(filter=FieldFilter("employee_id", "==", current_user["uid"]))
-        elif current_user["role"] == "lead":
-            # Leads see shifts they created
-            query = query.where(filter=FieldFilter("created_by", "==", current_user["uid"]))
-        elif current_user["role"] in ["manager", "director"]:
-            # Managers/Directors can apply additional filters or see all
-            pass
-        
-        # Apply additional filters
+
+        # Apply basic filters at query level where possible
         if status:
             query = query.where(filter=FieldFilter("status", "==", status))
-        
         if employee_id:
             query = query.where(filter=FieldFilter("employee_id", "==", employee_id))
-        
         if shift_date:
             query = query.where(filter=FieldFilter("shift_date", "==", shift_date))
-        
-        # Date range filtering (if needed, would require composite index)
-        # For now, we'll filter in memory if start_date/end_date provided
-        
+
+        user_cache = {}
+
+        def get_user(uid: str):
+            if uid in user_cache:
+                return user_cache[uid]
+            doc = db.collection("users").document(uid).get()
+            user_cache[uid] = doc.to_dict() if doc.exists else None
+            return user_cache[uid]
+
+        def can_view(shift_data: dict) -> bool:
+            if user_role in ["director", "super_admin", "hr"]:
+                return True
+            if user_role == "employee":
+                return shift_data.get("employee_id") == user_uid
+            if user_role == "manager":
+                if shift_data.get("created_by") == user_uid:
+                    return True
+                emp = get_user(shift_data.get("employee_id", ""))
+                if not emp:
+                    return False
+                return emp.get("manager_id") == user_uid or emp.get("lead_id") == user_uid
+            if user_role == "lead":
+                if shift_data.get("created_by") == user_uid:
+                    return True
+                emp = get_user(shift_data.get("employee_id", ""))
+                if not emp:
+                    return False
+                # Many datasets store only manager_id; include both to avoid missing visibility.
+                return emp.get("lead_id") == user_uid or emp.get("manager_id") == user_uid
+            return False
+
         shifts = []
         for doc in query.stream():
             shift_data = doc.to_dict()
             shift_data["id"] = doc.id
-            
-            # Apply date range filter if specified
+
+            # Date range filter in memory
             if start_date and shift_data.get("shift_date", "") < start_date:
                 continue
             if end_date and shift_data.get("shift_date", "") > end_date:
                 continue
-            
+
+            if not can_view(shift_data):
+                continue
+
             shifts.append(ShiftResponse(
                 id=shift_data["id"],
                 employee_id=shift_data["employee_id"],
@@ -188,9 +211,9 @@ async def get_shifts(
                 created_at=datetime.fromisoformat(shift_data["created_at"]),
                 updated_at=datetime.fromisoformat(shift_data["updated_at"]) if shift_data.get("updated_at") else None
             ))
-        
+
         return {"shifts": shifts, "total": len(shifts)}
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch shifts: {str(e)}")
 
@@ -535,7 +558,7 @@ async def update_shift(
     """
     Update a shift allocation.
     Only the creator or managers/directors can update shifts.
-    Can only update pending shifts.
+    Approved shifts can be edited, but will be reset to pending for re-approval.
     """
     try:
         shift_ref = db.collection("shifts").document(shift_id)
@@ -554,8 +577,8 @@ async def update_shift(
                     detail="You can only update shifts you created"
                 )
         
-        # Can only update pending shifts
-        if shift_data["status"] != "pending":
+        # Can only update pending or approved shifts
+        if shift_data["status"] not in ["pending", "approved"]:
             raise HTTPException(
                 status_code=400,
                 detail=f"Cannot update shift with status: {shift_data['status']}"
@@ -565,6 +588,13 @@ async def update_shift(
         update_data = {
             "updated_at": datetime.utcnow().isoformat()
         }
+
+        # If an approved shift is edited, reset it to pending for re-approval
+        if shift_data["status"] == "approved":
+            update_data["status"] = "pending"
+            update_data["approved_by"] = None
+            update_data["approved_by_name"] = None
+            update_data["rejection_reason"] = None
         
         if shift_update.shift_type is not None:
             update_data["shift_type"] = shift_update.shift_type

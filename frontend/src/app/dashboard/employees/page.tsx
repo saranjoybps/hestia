@@ -50,6 +50,7 @@ import {
   UserPlus,
   Edit,
   Trash2,
+  RotateCcw,
   Search,
   Filter,
   ChevronLeft,
@@ -181,13 +182,15 @@ export default function EmployeesPage() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [deactivatingEmployee, setDeactivatingEmployee] = useState<Employee | null>(null);
+  const [activatingEmployee, setActivatingEmployee] = useState<Employee | null>(null);
 
   // Permissions
-  const isHR = userData?.role === 'hr' || userData?.role === 'director';
+  const isHR = userData?.role === 'hr';
   const isDirector = userData?.role === 'director';
   const canCreateEmployee = isHR;
-  const canEditAll = isHR;
+  const canEditAll = isHR || isDirector; // HR or Director can edit all fields
   const canDeactivate = isDirector;
+  const canActivate = isDirector;
   const isLead = userData?.role === 'lead';
   const isManager = userData?.role === 'manager' || userData?.role === 'director';
   const canViewReportees = isLead || isManager;
@@ -272,13 +275,10 @@ export default function EmployeesPage() {
         const rawEmployees = Array.isArray(data.users) ? data.users : Array.isArray(data) ? data : [];
         const normalizedEmployees = rawEmployees.map(normalizeEmployee);
         setEmployees(normalizedEmployees);
-        if (data.total !== undefined) {
-          setTotalEmployees(data.total);
-          setTotalPages(Math.ceil(data.total / itemsPerPage));
-        } else {
-          // Fallback if backend doesn't return total
-          setTotalEmployees(normalizedEmployees.length);
-        }
+        const totalFromApi = typeof data.total === 'number' ? data.total : null;
+        const computedTotal = totalFromApi ?? ((currentPage - 1) * itemsPerPage + normalizedEmployees.length);
+        setTotalEmployees(computedTotal);
+        setTotalPages(Math.max(1, Math.ceil(computedTotal / itemsPerPage)));
       }
     } catch (error) {
       console.error('Error fetching employees:', error);
@@ -522,20 +522,21 @@ export default function EmployeesPage() {
       const token = await user?.getIdToken();
       const updateData = canEditAll
         ? {
-          name: formData.name,
-          last_name: formData.lastName,
-          role: formData.role,
-          department: formData.department,
-          designation: formData.designation,
-          phone: formData.phone,
-          dateOfJoining: formData.dateOfJoining || null,
-          manager_id: formData.managerId || null,
-        }
+            name: formData.name,
+            last_name: formData.lastName,
+            role: formData.role,
+            department: formData.department,
+            designation: formData.designation,
+            phone: formData.phone,
+            email: formData.email,
+            dateOfJoining: formData.dateOfJoining || null,
+            manager_id: formData.managerId || null,
+          }
         : {
-          name: formData.name,
-          last_name: formData.lastName,
-          phone: formData.phone,
-        };
+            name: formData.name,
+            last_name: formData.lastName,
+            phone: formData.phone,
+          };
 
       const response = await fetch(`${API_BASE_URL}/users/${editingEmployee.uid}`, {
         method: 'PUT',
@@ -590,6 +591,36 @@ export default function EmployeesPage() {
     } catch (error) {
       console.error('Deactivate employee error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to deactivate employee');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleActivateEmployee = async () => {
+    if (!activatingEmployee) return;
+
+    setLoading(true);
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch(
+        `${API_BASE_URL}/users/${activatingEmployee.uid}/activate`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to activate employee');
+      }
+
+      toast.success('Employee activated successfully');
+      setActivatingEmployee(null);
+      fetchEmployees();
+    } catch (error) {
+      console.error('Activate employee error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to activate employee');
     } finally {
       setLoading(false);
     }
@@ -794,6 +825,16 @@ export default function EmployeesPage() {
                                     <Trash2 className="h-4 w-4 text-red-600" />
                                   </Button>
                                 )}
+                                {canActivate && employee.uid !== userData?.uid && employee.status === 'inactive' && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setActivatingEmployee(employee)}
+                                    className="text-green-600"
+                                  >
+                                    <RotateCcw className="h-4 w-4" />
+                                  </Button>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -807,9 +848,6 @@ export default function EmployeesPage() {
                     <div className="flex items-center justify-between border-t pt-4">
                       <div className="text-sm text-gray-600">
                         <p>Page {currentPage} of {totalPages}</p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalEmployees)} of {totalEmployees} employees
-                        </p>
                       </div>
                       <div className="flex gap-2">
                         <Button
@@ -1448,32 +1486,50 @@ export default function EmployeesPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-name">First Name *</Label>
+                  <Label htmlFor="edit-email">Email *</Label>
                   <Input
-                    id="edit-name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    id="edit-email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    disabled={loading}
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="edit-last-name">Last Name</Label>
-                  <Input
-                    id="edit-last-name"
-                    value={formData.lastName}
-                    onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                  />
-                </div>
+                {canEditAll && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-name">First Name *</Label>
+                      <Input
+                        id="edit-name"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        disabled={loading}
+                      />
+                    </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="edit-phone">Phone</Label>
-                  <Input
-                    id="edit-phone"
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  />
-                </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-last-name">Last Name</Label>
+                      <Input
+                        id="edit-last-name"
+                        value={formData.lastName}
+                        onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                        disabled={loading}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-phone">Phone</Label>
+                      <Input
+                        id="edit-phone"
+                        type="tel"
+                        value={formData.phone}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        disabled={loading}
+                      />
+                    </div>
+                  </>
+                )}
 
                 {canEditAll && (
                   <>
@@ -1689,6 +1745,24 @@ export default function EmployeesPage() {
               disabled={loading}
             >
               {loading ? 'Deactivating...' : 'Deactivate'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Activate Confirmation Dialog */}
+      <AlertDialog open={!!activatingEmployee} onOpenChange={(open) => !open && setActivatingEmployee(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reactivate Employee?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will set the employee status to active and re-enable their login access.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setActivatingEmployee(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleActivateEmployee} disabled={loading}>
+              {loading ? 'Reactivating...' : 'Reactivate'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

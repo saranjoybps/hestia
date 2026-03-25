@@ -93,8 +93,7 @@ export default function AnnouncementsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
 
   // Permissions
-  const isHR = userData?.role === 'hr' || userData?.role === 'director';
-  const canCreate = isHR;
+  const canCreate = ['hr', 'director', 'manager', 'lead'].includes(userData?.role || '');
 
   const departments = [
     'All Departments',

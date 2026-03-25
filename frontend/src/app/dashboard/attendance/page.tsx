@@ -43,7 +43,6 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
-  Download,
   Filter,
   Edit,
   Users,
@@ -116,6 +115,12 @@ interface AttendanceStats {
 export default function AttendancePage() {
   const { userData, user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [exportingTeam, setExportingTeam] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportRange, setExportRange] = useState<{ start: string; end: string }>({
+    start: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
+    end: format(endOfMonth(new Date()), 'yyyy-MM-dd'),
+  });
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
@@ -147,9 +152,11 @@ export default function AttendancePage() {
 
   const isLead = userData?.role === 'lead';
   const isManager = userData?.role === 'manager' || userData?.role === 'director';
+  const isSuperAdmin = userData?.role === 'super_admin';
   const isHR = userData?.role === 'hr' || userData?.role === 'director';
   const canMarkAttendance = isLead || isManager || isHR;
   const canEditAttendance = isManager || isHR;
+  const canExportTeam = isSuperAdmin || isManager || isHR;
 
   useEffect(() => {
     if (canMarkAttendance && user) {
@@ -393,24 +400,44 @@ export default function AttendancePage() {
     setShowDayDetailsDialog(true);
   };
 
-  const exportAttendanceReport = () => {
-    const csvContent = [
-      ['Date', 'Employee', 'Status', 'Notes'],
-      ...attendanceRecords.map(r => [
-        r.date,
-        r.userName || selectedEmployeeName,
-        r.status,
-        r.notes || '-'
-      ])
-    ].map(row => row.join(',')).join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `attendance_report_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    a.click();
-    toast.success('Report downloaded successfully!');
+  const exportTeamAttendanceExcel = async (start: string, end: string) => {
+    if (!start || !end) {
+      toast.error('Please select start and end dates');
+      return;
+    }
+    setExportingTeam(true);
+    try {
+      const token = await user?.getIdToken();
+      const params = new URLSearchParams({
+        startDate: start,
+        endDate: end,
+      });
+      const response = await fetch(
+        `${API_BASE_URL}/reports/attendance/team-export?${params.toString()}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to export attendance');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `attendance_team_${start}_to_${end}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success('Team attendance exported');
+    } catch (error) {
+      console.error('Export team attendance error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to export attendance');
+    } finally {
+      setExportingTeam(false);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -533,10 +560,12 @@ export default function AttendancePage() {
               Mark Team Attendance
             </Button>
           )}
-          <Button variant="outline" onClick={exportAttendanceReport}>
-            <Download className="h-4 w-4 mr-2" />
-            Export Report
-          </Button>
+          {canExportTeam && (
+            <Button variant="outline" onClick={() => setShowExportDialog(true)} disabled={exportingTeam}>
+              <FileText className="h-4 w-4 mr-2" />
+              Export Team (Excel)
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1109,6 +1138,54 @@ export default function AttendancePage() {
 
           <div className="p-6 border-t bg-gray-50 flex justify-end">
             <Button onClick={() => setShowDayDetailsDialog(false)}>Close</Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Export Team Dialog */}
+      <Sheet open={showExportDialog} onOpenChange={setShowExportDialog}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '480px', maxWidth: '480px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Export Team Attendance</SheetTitle>
+              <SheetDescription className="mt-1">
+                Choose the date range for the Excel report.
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="export-start">From Date</Label>
+              <Input
+                id="export-start"
+                type="date"
+                value={exportRange.start}
+                onChange={(e) => setExportRange((prev) => ({ ...prev, start: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="export-end">To Date</Label>
+              <Input
+                id="export-end"
+                type="date"
+                value={exportRange.end}
+                onChange={(e) => setExportRange((prev) => ({ ...prev, end: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setShowExportDialog(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                exportTeamAttendanceExcel(exportRange.start, exportRange.end);
+                setFilterStartDate(exportRange.start);
+                setFilterEndDate(exportRange.end);
+                setShowExportDialog(false);
+              }}
+              disabled={exportingTeam}
+            >
+              {exportingTeam ? 'Exporting...' : 'Export Excel'}
+            </Button>
           </div>
         </SheetContent>
       </Sheet>

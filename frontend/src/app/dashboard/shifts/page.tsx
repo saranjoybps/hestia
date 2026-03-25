@@ -50,6 +50,7 @@ import {
   Clock,
   Plus,
   Edit,
+  Eye,
   Trash2,
   Calendar,
   Users,
@@ -111,7 +112,9 @@ export default function ShiftsPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showBulkDialog, setShowBulkDialog] = useState(false);
+  const [showViewDialog, setShowViewDialog] = useState(false);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
+  const [viewingShift, setViewingShift] = useState<Shift | null>(null);
 
   // Form data
   const [formData, setFormData] = useState<ShiftFormData>({
@@ -543,6 +546,11 @@ export default function ShiftsPage() {
     setShowEditDialog(true);
   };
 
+  const openViewDialog = (shift: Shift) => {
+    setViewingShift(shift);
+    setShowViewDialog(true);
+  };
+
   const getShiftTypeBadge = (type: string) => {
     const colors: Record<string, string> = {
       morning: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
@@ -706,39 +714,50 @@ export default function ShiftsPage() {
                             </TableCell>
                             <TableCell>
                               <div className="flex gap-2">
-                                {shift.status === 'pending' && shift.created_by === userData?.uid && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openViewDialog(shift)}
+                                  aria-label="View shift"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                {shift.created_by === userData?.uid && (
                                   <>
                                     <Button
                                       size="sm"
                                       variant="outline"
                                       onClick={() => openEditDialog(shift)}
+                                      aria-label="Edit shift"
                                     >
                                       <Edit className="h-4 w-4" />
                                     </Button>
-                                    <AlertDialog>
-                                      <AlertDialogTrigger asChild>
-                                        <Button size="sm" variant="outline" className="text-red-600">
-                                          <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                      </AlertDialogTrigger>
-                                      <AlertDialogContent>
-                                        <AlertDialogHeader>
-                                          <AlertDialogTitle>Delete Shift</AlertDialogTitle>
-                                          <AlertDialogDescription>
-                                            Are you sure you want to delete this shift allocation?
-                                          </AlertDialogDescription>
-                                        </AlertDialogHeader>
-                                        <AlertDialogFooter>
-                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                          <AlertDialogAction
-                                            className="bg-red-600 hover:bg-red-700"
-                                            onClick={() => handleDeleteShift(shift.id)}
-                                          >
-                                            Delete
-                                          </AlertDialogAction>
-                                        </AlertDialogFooter>
-                                      </AlertDialogContent>
-                                    </AlertDialog>
+                                    {shift.status === 'pending' && (
+                                      <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                          <Button size="sm" variant="outline" className="text-red-600" aria-label="Delete shift">
+                                            <Trash2 className="h-4 w-4" />
+                                          </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                          <AlertDialogHeader>
+                                            <AlertDialogTitle>Delete Shift</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                              Are you sure you want to delete this shift allocation?
+                                            </AlertDialogDescription>
+                                          </AlertDialogHeader>
+                                          <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction
+                                              className="bg-red-600 hover:bg-red-700"
+                                              onClick={() => handleDeleteShift(shift.id)}
+                                            >
+                                              Delete
+                                            </AlertDialogAction>
+                                          </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                      </AlertDialog>
+                                    )}
                                   </>
                                 )}
                               </div>
@@ -1240,6 +1259,97 @@ export default function ShiftsPage() {
         </SheetContent>
       </Sheet>
 
+      {/* View Shift Dialog */}
+      <Sheet open={showViewDialog} onOpenChange={(open) => { setShowViewDialog(open); if (!open) setViewingShift(null); }}>
+        <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
+          <div className="p-6 border-b">
+            <SheetHeader>
+              <SheetTitle className="text-xl">Shift Details</SheetTitle>
+              <SheetDescription className="mt-1">
+                View shift information and status.
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <div className="p-6 space-y-5">
+            {viewingShift ? (
+              <>
+                <div className="space-y-1">
+                  <Label>Employee</Label>
+                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                    {viewingShift.employee_name || 'Unknown'}
+                    {viewingShift.employee_email ? ` (${viewingShift.employee_email})` : ''}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label>Date</Label>
+                    <div className="text-sm text-gray-700 dark:text-gray-300">
+                      {new Date(viewingShift.shift_date).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Time</Label>
+                    <div className="text-sm text-gray-700 dark:text-gray-300">
+                      {viewingShift.start_time} - {viewingShift.end_time}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label>Shift Type</Label>
+                    <div>{getShiftTypeBadge(viewingShift.shift_type)}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Status</Label>
+                    <div>{getStatusBadge(viewingShift.status)}</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label>Created By</Label>
+                    <div className="text-sm text-gray-700 dark:text-gray-300">
+                      {viewingShift.created_by_name || 'Unknown'}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Approved/Rejected By</Label>
+                    <div className="text-sm text-gray-700 dark:text-gray-300">
+                      {viewingShift.approved_by_name || '—'}
+                    </div>
+                  </div>
+                </div>
+
+                {viewingShift.notes && (
+                  <div className="space-y-1">
+                    <Label>Notes</Label>
+                    <div className="text-sm text-gray-700 dark:text-gray-300">{viewingShift.notes}</div>
+                  </div>
+                )}
+
+                {viewingShift.status === 'rejected' && viewingShift.rejection_reason && (
+                  <div className="space-y-1">
+                    <Label>Rejection Reason</Label>
+                    <div className="text-sm text-red-700 dark:text-red-300">{viewingShift.rejection_reason}</div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-sm text-gray-600 dark:text-gray-400">No shift selected.</div>
+            )}
+          </div>
+
+          <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+            <Button variant="outline" onClick={() => { setShowViewDialog(false); setViewingShift(null); }}>
+              Close
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
       {/* Edit Shift Dialog */}
       <Sheet open={showEditDialog} onOpenChange={setShowEditDialog}>
         <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
@@ -1247,7 +1357,7 @@ export default function ShiftsPage() {
             <SheetHeader>
               <SheetTitle className="text-xl">Edit Shift</SheetTitle>
               <SheetDescription className="mt-1">
-                Update shift details. Only pending shifts can be edited.
+                Update shift details. Editing an approved shift will require re-approval.
               </SheetDescription>
             </SheetHeader>
           </div>
