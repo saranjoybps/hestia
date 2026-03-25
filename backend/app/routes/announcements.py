@@ -16,11 +16,11 @@ class PinRequest(BaseModel):
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_announcement(
     announcement_data: AnnouncementCreate,
-    current_user: dict = Depends(require_role("director", "hr"))
+    current_user: dict = Depends(require_role("director", "hr", "manager", "lead"))
 ):
     """
     Create a new announcement
-    Director/HR only
+    Director/HR/Manager/Lead
     """
     try:
         announcement_doc = {
@@ -126,11 +126,11 @@ async def list_announcements(
 
 @router.get("/my-announcements")
 async def get_my_announcements(
-    current_user: dict = Depends(require_role("director", "hr"))
+    current_user: dict = Depends(require_role("director", "hr", "manager", "lead"))
 ):
     """
     Get announcements created by current user
-    Director/HR only
+    Director/HR/Manager/Lead
     """
     try:
         query = db.collection("announcements").where("createdBy", "==", current_user.get("uid"))
@@ -186,11 +186,11 @@ async def get_announcement(
 async def update_announcement(
     announcement_id: str,
     announcement_update: AnnouncementUpdate,
-    current_user: dict = Depends(require_role("director", "hr"))
+    current_user: dict = Depends(require_role("director", "hr", "manager", "lead"))
 ):
     """
     Update announcement
-    Director/HR only
+    Director/HR/Manager/Lead
     """
     try:
         announcement_ref = db.collection("announcements").document(announcement_id)
@@ -256,11 +256,11 @@ async def update_announcement(
 async def toggle_pin_announcement(
     announcement_id: str,
     pin_data: PinRequest,
-    current_user: dict = Depends(require_role("director", "hr"))
+    current_user: dict = Depends(require_role("director", "hr", "manager", "lead"))
 ):
     """
     Pin/unpin announcement
-    Director/HR only
+    Director/HR/Manager/Lead
     """
     try:
         announcement_ref = db.collection("announcements").document(announcement_id)
@@ -315,11 +315,11 @@ async def toggle_pin_announcement(
 @router.delete("/{announcement_id}")
 async def delete_announcement(
     announcement_id: str,
-    current_user: dict = Depends(require_role("director", "hr"))
+    current_user: dict = Depends(require_role("director", "hr", "manager", "lead"))
 ):
     """
     Delete announcement
-    Director/HR only
+    Director/HR/Manager/Lead
     """
     try:
         announcement_ref = db.collection("announcements").document(announcement_id)

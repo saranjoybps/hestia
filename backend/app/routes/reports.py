@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from app.dependencies import db, get_current_user, require_role
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict
 import csv
 import io
 from collections import defaultdict
+from datetime import timedelta, date
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -517,4 +518,133 @@ async def export_report(
         raise HTTPException(
             status_code=500,
             detail=f"Error exporting report: {str(e)}"
+        )
+
+
+@router.get("/attendance/team-export")
+async def export_team_attendance_excel(
+    startDate: str = Query(..., description="Start date YYYY-MM-DD"),
+    endDate: str = Query(..., description="End date YYYY-MM-DD"),
+    current_user: dict = Depends(require_role("super_admin", "director", "manager", "hr"))
+):
+    """
+    Export attendance summary per team member to Excel (.xlsx).
+    Roles: super_admin, director, manager.
+    Columns: Employee Name, From Date, To Date, Total Days, Present Days, Absent Days, Half Days, Attendance %.
+    """
+    try:
+        try:
+            from openpyxl import Workbook
+        except ImportError:
+            raise HTTPException(status_code=500, detail="openpyxl is required for Excel export")
+
+        try:
+            start_dt = date.fromisoformat(startDate)
+            end_dt = date.fromisoformat(endDate)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format, expected YYYY-MM-DD")
+        if end_dt < start_dt:
+            raise HTTPException(status_code=400, detail="endDate must be on/after startDate")
+
+        total_days = (end_dt - start_dt).days + 1
+
+        # Fetch users
+        users = []
+        users_iter = db.collection("users").stream()
+        for u_doc in users_iter:
+            data = u_doc.to_dict()
+            data["uid"] = u_doc.id
+            users.append(data)
+
+        role = current_user.get("role")
+        manager_id = current_user.get("uid")
+
+        def in_scope(user_data: Dict) -> bool:
+            if role in ["super_admin", "director", "hr"]:
+                return True
+            if role == "manager":
+                return user_data.get("manager_id") == manager_id or user_data.get("lead_id") == manager_id
+            return False
+
+        scoped_users = [u for u in users if in_scope(u)]
+        if not scoped_users:
+            raise HTTPException(status_code=404, detail="No team members found for selected range")
+
+        # Preload attendance in date range
+        att_query = db.collection("attendance")\
+            .where("date", ">=", startDate)\
+            .where("date", "<=", endDate)
+        attendance_docs = att_query.stream()
+
+        stats: Dict[str, Dict[str, float]] = {
+            u["uid"]: {
+                "name": u.get("name", "Unknown"),
+                "present": 0,
+                "half_day": 0,
+                "leave": 0,
+            } for u in scoped_users
+        }
+
+        for doc in attendance_docs:
+            data = doc.to_dict()
+            uid = data.get("user_id")
+            if uid not in stats:
+                continue
+            status = data.get("status", "absent")
+            if status == "present":
+                stats[uid]["present"] += 1
+            elif status in ["half_day", "half-day"]:
+                stats[uid]["half_day"] += 1
+            elif status == "leave":
+                stats[uid]["leave"] += 1
+            else:
+                # treat explicit absent as no present increment
+                pass
+
+        # Build workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Attendance"
+        headers = [
+            "Employee Name", "From Date", "To Date",
+            "Total Days", "Present Days", "Absent Days",
+            "Half Days", "Attendance %"
+        ]
+        ws.append(headers)
+
+        for uid, s in sorted(stats.items(), key=lambda x: x[1]["name"]):
+            present = s["present"]
+            half_day = s["half_day"]
+            leave = s["leave"]
+            absent = max(total_days - present - half_day - leave, 0)
+            attendance_pct = ((present + 0.5 * half_day) / total_days * 100) if total_days > 0 else 0
+
+            ws.append([
+                s["name"],
+                startDate,
+                endDate,
+                total_days,
+                present,
+                absent,
+                half_day,
+                round(attendance_pct, 2),
+            ])
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        response = StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        response.headers["Content-Disposition"] = f"attachment; filename=attendance_report_{startDate}_to_{endDate}.xlsx"
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error exporting attendance: {str(e)}"
         )

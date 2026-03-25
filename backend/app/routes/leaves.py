@@ -5,6 +5,7 @@ from app.services.audit_log import log_audit_event
 from app.services.zoho_smtp import send_email_smtp
 from datetime import datetime
 from typing import Optional, Dict
+from google.cloud.firestore_v1 import FieldFilter
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/leaves", tags=["Leaves"])
@@ -219,72 +220,67 @@ async def get_pending_approvals(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Get pending leave approvals for leads/managers
+    Get pending leave approvals per hierarchy:
+    - HR/Director: all pending
+    - Manager: pending for users where manager_id or lead_id == manager
+    - Lead: pending for users where lead_id == lead
     """
     try:
         user_role = current_user.get("role")
         uid = current_user.get("uid")
-        
+
         if user_role not in ["lead", "manager", "director", "hr"]:
             return []
-        
-        # Get reportees based on role
-        if user_role in ["hr", "director"]:
-            # Get all pending leaves
-            query = db.collection("leaves").where("status", "==", "pending")
-        elif user_role == "manager":
-            # Get leaves from reportees
-            reportees_query = db.collection("users").where("managerId", "==", uid)
-            reportee_ids = [doc.id for doc in reportees_query.stream()]
-            
-            if not reportee_ids:
-                return []
-            
-            # Firestore limitation: can only use 'in' with up to 10 items
-            pending_leaves = []
-            for i in range(0, len(reportee_ids), 10):
-                batch = reportee_ids[i:i+10]
-                query = db.collection("leaves")\
-                    .where("userId", "in", batch)\
-                    .where("status", "==", "pending")
-                
-                for doc in query.stream():
-                    leave_data = doc.to_dict()
-                    leave_data["id"] = doc.id
-                    pending_leaves.append(leave_data)
-            
-            return pending_leaves
-        else:  # lead
-            # Get leaves from direct reportees
-            reportees_query = db.collection("users").where("managerId", "==", uid)
-            reportee_ids = [doc.id for doc in reportees_query.stream()]
-            
-            if not reportee_ids:
-                return []
-            
-            pending_leaves = []
-            for i in range(0, len(reportee_ids), 10):
-                batch = reportee_ids[i:i+10]
-                query = db.collection("leaves")\
-                    .where("userId", "in", batch)\
-                    .where("status", "==", "pending")
-                
-                for doc in query.stream():
-                    leave_data = doc.to_dict()
-                    leave_data["id"] = doc.id
-                    pending_leaves.append(leave_data)
-            
-            return pending_leaves
-        
-        # For HR/Director
+
         pending_leaves = []
-        for doc in query.stream():
-            leave_data = doc.to_dict()
-            leave_data["id"] = doc.id
-            pending_leaves.append(leave_data)
-        
+
+        if user_role in ["hr", "director"]:
+            query = db.collection("leaves").where(filter=FieldFilter("status", "==", "pending"))
+            for doc in query.stream():
+                data = doc.to_dict()
+                data["id"] = doc.id
+                pending_leaves.append(data)
+            return pending_leaves
+
+        def batched_ids(ids_list):
+            for i in range(0, len(ids_list), 10):
+                yield ids_list[i:i+10]
+
+        if user_role == "manager":
+            # Support both snake_case and camelCase fields in user documents
+            reportees_query = db.collection("users").where(filter=FieldFilter("manager_id", "==", uid))
+            reportees_query_alt = db.collection("users").where(filter=FieldFilter("managerId", "==", uid))
+            leadees_query = db.collection("users").where(filter=FieldFilter("lead_id", "==", uid))
+            leadees_query_alt = db.collection("users").where(filter=FieldFilter("leadId", "==", uid))
+            ids = {doc.id for doc in reportees_query.stream()}
+            ids.update({doc.id for doc in reportees_query_alt.stream()})
+            ids.update({doc.id for doc in leadees_query.stream()})
+            ids.update({doc.id for doc in leadees_query_alt.stream()})
+        else:  # lead
+            # Leads can also be stored as manager_id in some orgs; include both
+            reportees_query = db.collection("users").where(filter=FieldFilter("lead_id", "==", uid))
+            reportees_query_alt = db.collection("users").where(filter=FieldFilter("leadId", "==", uid))
+            as_manager_query = db.collection("users").where(filter=FieldFilter("manager_id", "==", uid))
+            as_manager_query_alt = db.collection("users").where(filter=FieldFilter("managerId", "==", uid))
+            ids = {doc.id for doc in reportees_query.stream()}
+            ids.update({doc.id for doc in reportees_query_alt.stream()})
+            ids.update({doc.id for doc in as_manager_query.stream()})
+            ids.update({doc.id for doc in as_manager_query_alt.stream()})
+
+        if not ids:
+            return []
+
+        for batch in batched_ids(list(ids)):
+            query = db.collection("leaves")\
+                .where(filter=FieldFilter("userId", "in", batch))\
+                .where(filter=FieldFilter("status", "==", "pending"))
+            for doc in query.stream():
+                data = doc.to_dict()
+                data["id"] = doc.id
+                pending_leaves.append(data)
+
         return pending_leaves
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

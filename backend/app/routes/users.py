@@ -416,6 +416,62 @@ async def deactivate_user(
         )
 
 
+@router.post("/{user_id}/activate")
+async def activate_user(
+    user_id: str,
+    current_user: dict = Depends(require_role("director", "hr"))
+):
+    """
+    Reactivate user (enable login)
+    Director/HR only
+    """
+    try:
+        user_ref = db.collection("users").document(user_id)
+        user_doc = user_ref.get()
+
+        if not user_doc.exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        user_ref.update({
+            "status": "active",
+            "updated_at": datetime.utcnow().isoformat(),
+            "deactivated_by": None
+        })
+
+        firebase_auth.update_user(user_id, disabled=False)
+
+        log_audit_event(
+            actor_id=current_user.get("uid"),
+            actor_name=current_user.get("name"),
+            actor_email=current_user.get("email"),
+            module="employees",
+            action="employee_activated",
+            description=(
+                f"{current_user.get('name', 'Someone')} reactivated employee "
+                f"{user_doc.to_dict().get('name', user_id)}."
+            ),
+            result="success",
+            target_type="user",
+            target_id=user_id,
+            metadata={
+                "status": "active"
+            }
+        )
+
+        return {"message": "User activated successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error activating user: {str(e)}"
+        )
+
+
 @router.get("/{user_id}/reportees", response_model=list[UserResponse])
 async def get_reportees(
     user_id: str,
