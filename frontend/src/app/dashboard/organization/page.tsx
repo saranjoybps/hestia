@@ -60,9 +60,7 @@ interface User {
   department: string;
   designation: string;
   manager_id?: string;
-  lead_id?: string;
   managerName?: string;
-  leadName?: string;
   reportees?: User[];
 }
 
@@ -79,6 +77,11 @@ interface HierarchyNode {
   user: User;
   reportees: HierarchyNode[];
 }
+
+const normalizeUser = (user: any): User => ({
+  ...user,
+  manager_id: user.manager_id ?? user.managerId ?? user.lead_id ?? user.leadId,
+});
 
 export default function OrganizationPage() {
   const { userData, user } = useAuth();
@@ -106,14 +109,12 @@ export default function OrganizationPage() {
     department: string;
     designation: string;
     manager_id: string;
-    lead_id: string;
   }>({
     uid: '',
     role: 'employee',
     department: '',
     designation: '',
     manager_id: '',
-    lead_id: '',
   });
 
   const [deptForm, setDeptForm] = useState({
@@ -150,13 +151,12 @@ export default function OrganizationPage() {
 
       if (usersRes.ok) {
         const data = await usersRes.json();
-        const usersList = data.users || [];
+        const usersList = (data.users || []).map(normalizeUser);
 
         // Enrich users with manager/lead names
         const enrichedUsers = usersList.map((u: User) => ({
           ...u,
           managerName: u.manager_id ? usersList.find((m: User) => m.uid === u.manager_id)?.name : undefined,
-          leadName: u.lead_id ? usersList.find((l: User) => l.uid === u.lead_id)?.name : undefined,
         }));
 
         setUsers(enrichedUsers);
@@ -195,11 +195,10 @@ export default function OrganizationPage() {
 
     const buildNode = (user: User): HierarchyNode => {
       const directReports = usersList.filter(u => u.manager_id === user.uid);
-      const leadReports = usersList.filter(u => u.lead_id === user.uid && !directReports.includes(u));
 
       return {
         user,
-        reportees: [...directReports, ...leadReports].map(buildNode),
+        reportees: directReports.map(buildNode),
       };
     };
 
@@ -234,12 +233,8 @@ export default function OrganizationPage() {
         updateData.manager_id = null;
       }
 
-      // Only include lead_id if it has a value or explicitly set to null
-      if (userForm.lead_id && userForm.lead_id !== 'none') {
-        updateData.lead_id = userForm.lead_id;
-      } else {
-        updateData.lead_id = null;
-      }
+      // Single reporting flow: clear legacy lead linkage on update.
+      updateData.lead_id = null;
 
       console.log('Updating user with data:', updateData);
 
@@ -355,7 +350,6 @@ export default function OrganizationPage() {
       department: '',
       designation: '',
       manager_id: '',
-      lead_id: '',
     });
   };
 
@@ -375,7 +369,6 @@ export default function OrganizationPage() {
       department: user.department || '',
       designation: user.designation || '',
       manager_id: user.manager_id || '',
-      lead_id: user.lead_id || '',
     });
     setShowUserDialog(true);
   };
@@ -419,8 +412,8 @@ export default function OrganizationPage() {
     const chain: string[] = [user.name];
     let current = user;
 
-    while (current.manager_id || current.lead_id) {
-      const nextId = current.manager_id || current.lead_id;
+    while (current.manager_id) {
+      const nextId = current.manager_id;
       const next = users.find(u => u.uid === nextId);
       if (!next) break;
       chain.push(next.name);
@@ -604,12 +597,7 @@ export default function OrganizationPage() {
                                   <span className="text-gray-500">Manager:</span> {user.managerName}
                                 </div>
                               )}
-                              {user.leadName && (
-                                <div className="text-sm">
-                                  <span className="text-gray-500">Lead:</span> {user.leadName}
-                                </div>
-                              )}
-                              {!user.managerName && !user.leadName && (
+                              {!user.managerName && (
                                 <span className="text-gray-400 text-sm">None</span>
                               )}
                             </div>
@@ -825,43 +813,31 @@ export default function OrganizationPage() {
               <div className="space-y-4">
                 <h4 className="font-semibold text-gray-900">Reporting Structure</h4>
 
-                <div className="space-y-2">
-                  <Label htmlFor="manager">Reports to Manager</Label>
-                  <Select
-                    value={userForm.manager_id || 'none'}
-                    onValueChange={(value) => setUserForm({ ...userForm, manager_id: value === 'none' ? '' : value })}
-                  >
-                    <SelectTrigger id="manager"><SelectValue placeholder="Select manager (optional)" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {users
-                        .filter(u => (u.role === 'manager' || u.role === 'director') && u.uid !== selectedUser.uid)
-                        .map((u) => (
-                          <SelectItem key={u.uid} value={u.uid}>{u.name} ({u.designation})</SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {userForm.role === 'employee' && (
-                  <div className="space-y-2">
-                    <Label htmlFor="lead">Reports to Lead</Label>
-                    <Select
-                      value={userForm.lead_id || 'none'}
-                      onValueChange={(value) => setUserForm({ ...userForm, lead_id: value === 'none' ? '' : value })}
-                    >
-                      <SelectTrigger id="lead"><SelectValue placeholder="Select lead (optional)" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        {users
-                          .filter(u => u.role === 'lead' && u.uid !== selectedUser.uid)
-                          .map((u) => (
-                            <SelectItem key={u.uid} value={u.uid}>{u.name} ({u.designation})</SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
+	                <div className="space-y-2">
+	                  <Label htmlFor="manager">Reports to Manager</Label>
+	                  <Select
+	                    value={userForm.manager_id || 'none'}
+	                    onValueChange={(value) => setUserForm({ ...userForm, manager_id: value === 'none' ? '' : value })}
+	                  >
+	                    <SelectTrigger id="manager"><SelectValue placeholder="Select manager (optional)" /></SelectTrigger>
+	                    <SelectContent>
+	                      <SelectItem value="none">None</SelectItem>
+		                      {users
+		                        .filter(u =>
+		                          u.uid !== selectedUser.uid &&
+		                          (
+		                            u.role === 'lead' ||
+		                            u.role === 'manager' ||
+		                            u.role === 'director' ||
+		                            u.uid === userForm.manager_id
+		                          )
+		                        )
+		                        .map((u) => (
+		                          <SelectItem key={u.uid} value={u.uid}>{u.name} ({u.designation})</SelectItem>
+		                        ))}
+		                    </SelectContent>
+		                  </Select>
+	                </div>
 
                 <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                   <p className="text-sm text-yellow-800">

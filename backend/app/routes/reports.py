@@ -563,7 +563,9 @@ async def export_team_attendance_excel(
             if role in ["super_admin", "director", "hr"]:
                 return True
             if role == "manager":
-                return user_data.get("manager_id") == manager_id or user_data.get("lead_id") == manager_id
+                user_manager_id = user_data.get("manager_id") or user_data.get("managerId")
+                legacy_lead_id = user_data.get("lead_id") or user_data.get("leadId")
+                return user_manager_id == manager_id or legacy_lead_id == manager_id
             return False
 
         scoped_users = [u for u in users if in_scope(u)]

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional, Literal
+from typing import Optional, Literal, Dict, Any, Set
 from datetime import datetime
 from app.dependencies import get_current_user, require_role
 from app.dependencies import db
@@ -10,14 +10,126 @@ from google.cloud.firestore_v1 import FieldFilter
 router = APIRouter(tags=["shifts"])
 
 
+ALLOWED_TARGET_ROLES = {
+    "lead": {"employee"},
+    "manager": {"lead", "employee"},
+    "director": {"manager", "lead", "employee"},
+    "hr": {"manager", "lead", "employee"},
+}
+
+APPROVAL_CREATOR_ROLES = {
+    "manager": {"manager", "lead"},
+    "director": {"director", "manager", "lead"},
+    "super_admin": {"director", "manager", "lead"},
+}
+
+
+def _get_direct_reportee_ids(manager_uid: str) -> Set[str]:
+    """Return direct reportee ids for a user using manager_id as primary and legacy fallback fields."""
+    ids: Set[str] = set()
+    queries = [
+        db.collection("users").where(filter=FieldFilter("manager_id", "==", manager_uid)),
+        db.collection("users").where(filter=FieldFilter("managerId", "==", manager_uid)),
+        # Legacy fallback for old datasets
+        db.collection("users").where(filter=FieldFilter("lead_id", "==", manager_uid)),
+        db.collection("users").where(filter=FieldFilter("leadId", "==", manager_uid)),
+    ]
+    for query in queries:
+        for doc in query.stream():
+            ids.add(doc.id)
+    return ids
+
+
+def _is_descendant(manager_uid: str, target_uid: str, max_depth: int = 8) -> bool:
+    """Check whether target user exists anywhere under manager in the reporting tree."""
+    if not manager_uid or not target_uid or manager_uid == target_uid:
+        return False
+
+    visited: Set[str] = {manager_uid}
+    frontier: Set[str] = {manager_uid}
+    depth = 0
+
+    while frontier and depth < max_depth:
+        next_frontier: Set[str] = set()
+        for uid in frontier:
+            reportee_ids = _get_direct_reportee_ids(uid)
+            if target_uid in reportee_ids:
+                return True
+            for rid in reportee_ids:
+                if rid not in visited:
+                    visited.add(rid)
+                    next_frontier.add(rid)
+        frontier = next_frontier
+        depth += 1
+
+    return False
+
+
+def _ensure_shift_hierarchy_access(current_user: Dict[str, Any], target_user: Dict[str, Any], action: str) -> None:
+    """Validate role + hierarchy rules for shift create/update actions."""
+    actor_role = current_user.get("role")
+    actor_uid = current_user.get("uid")
+    target_uid = target_user.get("uid")
+    target_role = target_user.get("role")
+
+    allowed_roles = ALLOWED_TARGET_ROLES.get(actor_role, set())
+    if not allowed_roles:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    if target_role not in allowed_roles:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"As {actor_role}, you can only {action} shifts for: "
+                f"{', '.join(sorted(allowed_roles))}"
+            )
+        )
+
+    if not _is_descendant(actor_uid, target_uid):
+        raise HTTPException(
+            status_code=403,
+            detail=f"You can only {action} shifts for employees in your reporting hierarchy"
+        )
+
+
+def _get_user_role(uid: Optional[str], role_cache: Dict[str, Optional[str]]) -> Optional[str]:
+    if not uid:
+        return None
+    if uid in role_cache:
+        return role_cache[uid]
+    doc = db.collection("users").document(uid).get()
+    role_cache[uid] = doc.to_dict().get("role") if doc.exists else None
+    return role_cache[uid]
+
+
+def _can_current_user_approve_shift(current_user: Dict[str, Any], shift_data: Dict[str, Any], role_cache: Dict[str, Optional[str]]) -> bool:
+    approver_role = current_user.get("role")
+    allowed_creator_roles = APPROVAL_CREATOR_ROLES.get(approver_role, set())
+    if not allowed_creator_roles:
+        return False
+
+    creator_role = _get_user_role(shift_data.get("created_by"), role_cache)
+    if creator_role not in allowed_creator_roles:
+        return False
+
+    # Managers can only approve/reject shifts for employees under their hierarchy.
+    if approver_role == "manager":
+        return _is_descendant(current_user.get("uid"), shift_data.get("employee_id"))
+
+    return True
+
+
 @router.post("/shifts", response_model=ShiftResponse)
 async def create_shift(
     shift: ShiftCreate,
-    current_user: dict = Depends(require_role("lead", "manager", "director"))
+    current_user: dict = Depends(require_role("lead", "manager", "director", "hr"))
 ):
     """
     Create a new shift allocation.
-    Only leads, managers, and directors can create shifts for their reportees.
+    Hierarchy rules:
+    - Director/HR: managers, leads, employees under their hierarchy
+    - Manager: leads, employees under their hierarchy
+    - Lead: employees under their hierarchy
     """
     try:
         # Verify the employee exists
@@ -29,20 +141,8 @@ async def create_shift(
         
         employee_data = employee_doc.to_dict()
         
-        # Verify the creator is the lead/manager of the employee
-        if current_user["role"] == "lead":
-            if employee_data.get("lead_id") != current_user["uid"]:
-                raise HTTPException(
-                    status_code=403,
-                    detail="You can only create shifts for your direct reportees"
-                )
-        elif current_user["role"] == "manager":
-            if employee_data.get("manager_id") != current_user["uid"]:
-                raise HTTPException(
-                    status_code=403,
-                    detail="You can only create shifts for employees under your management"
-                )
-        # Directors can create shifts for anyone
+        employee_data["uid"] = shift.employee_id
+        _ensure_shift_hierarchy_access(current_user, employee_data, "create")
         
         # Check for duplicate shift on same date
         existing_shifts = (
@@ -129,8 +229,8 @@ async def get_shifts(
     Get shifts based on filters and user role.
     Visibility rules:
     - Employee: only own shifts
-    - Lead: shifts for their reportees (lead_id match) + shifts they created
-    - Manager: shifts for their reportees (manager_id or lead_id match) + shifts they created
+    - Lead: shifts for their reportees (manager_id match) + shifts they created
+    - Manager: shifts for their reportees (manager_id match) + shifts they created
     - HR/Director/Super Admin: all shifts
     """
     try:
@@ -162,20 +262,27 @@ async def get_shifts(
             if user_role == "employee":
                 return shift_data.get("employee_id") == user_uid
             if user_role == "manager":
+                if shift_data.get("employee_id") == user_uid:
+                    return True
                 if shift_data.get("created_by") == user_uid:
                     return True
                 emp = get_user(shift_data.get("employee_id", ""))
                 if not emp:
                     return False
-                return emp.get("manager_id") == user_uid or emp.get("lead_id") == user_uid
+                manager_id = emp.get("manager_id") or emp.get("managerId")
+                legacy_lead_id = emp.get("lead_id") or emp.get("leadId")
+                return manager_id == user_uid or legacy_lead_id == user_uid
             if user_role == "lead":
+                if shift_data.get("employee_id") == user_uid:
+                    return True
                 if shift_data.get("created_by") == user_uid:
                     return True
                 emp = get_user(shift_data.get("employee_id", ""))
                 if not emp:
                     return False
-                # Many datasets store only manager_id; include both to avoid missing visibility.
-                return emp.get("lead_id") == user_uid or emp.get("manager_id") == user_uid
+                manager_id = emp.get("manager_id") or emp.get("managerId")
+                legacy_lead_id = emp.get("lead_id") or emp.get("leadId")
+                return manager_id == user_uid or legacy_lead_id == user_uid
             return False
 
         shifts = []
@@ -220,31 +327,25 @@ async def get_shifts(
 
 @router.get("/shifts/pending-approvals", response_model=dict)
 async def get_pending_approvals(
-    current_user: dict = Depends(require_role("manager", "director"))
+    current_user: dict = Depends(require_role("manager", "director", "super_admin"))
 ):
     """
-    Get shifts pending approval for manager/director.
-    Managers see shifts for employees under them.
-    Directors see all pending shifts.
+    Get shifts pending approval.
+    Approval rules:
+    - director/super_admin: shifts created by director/manager/lead
+    - manager: shifts created by manager/lead and employee under manager hierarchy
     """
     try:
         query = db.collection("shifts").where(filter=FieldFilter("status", "==", "pending"))
+        role_cache: Dict[str, Optional[str]] = {}
         
         shifts = []
         for doc in query.stream():
             shift_data = doc.to_dict()
             shift_data["id"] = doc.id
-            
-            # For managers, check if they manage this employee
-            if current_user["role"] == "manager":
-                employee_ref = db.collection("users").document(shift_data["employee_id"])
-                employee_doc = employee_ref.get()
-                
-                if employee_doc.exists:
-                    employee_data = employee_doc.to_dict()
-                    # Check if this manager is responsible for the employee
-                    if employee_data.get("manager_id") != current_user["uid"]:
-                        continue
+
+            if not _can_current_user_approve_shift(current_user, shift_data, role_cache):
+                continue
             
             shifts.append(ShiftResponse(
                 id=shift_data["id"],
@@ -275,11 +376,13 @@ async def get_pending_approvals(
 @router.patch("/shifts/{shift_id}/approve", response_model=ShiftResponse)
 async def approve_shift(
     shift_id: str,
-    current_user: dict = Depends(require_role("manager", "director"))
+    current_user: dict = Depends(require_role("manager", "director", "super_admin"))
 ):
     """
     Approve a shift allocation.
-    Only managers and directors can approve shifts.
+    Approval rules:
+    - director/super_admin: shifts created by director/manager/lead
+    - manager: shifts created by manager/lead and employee under manager hierarchy
     """
     try:
         shift_ref = db.collection("shifts").document(shift_id)
@@ -296,18 +399,11 @@ async def approve_shift(
                 detail=f"Cannot approve shift with status: {shift_data['status']}"
             )
         
-        # For managers, verify they manage this employee
-        if current_user["role"] == "manager":
-            employee_ref = db.collection("users").document(shift_data["employee_id"])
-            employee_doc = employee_ref.get()
-            
-            if employee_doc.exists:
-                employee_data = employee_doc.to_dict()
-                if employee_data.get("manager_id") != current_user["uid"]:
-                    raise HTTPException(
-                        status_code=403,
-                        detail="You can only approve shifts for employees under your management"
-                    )
+        if not _can_current_user_approve_shift(current_user, shift_data, {}):
+            raise HTTPException(
+                status_code=403,
+                detail="You are not allowed to approve this shift"
+            )
         
         # Update shift status
         update_data = {
@@ -377,11 +473,11 @@ async def approve_shift(
 async def reject_shift(
     shift_id: str,
     rejection_data: dict,
-    current_user: dict = Depends(require_role("manager", "director"))
+    current_user: dict = Depends(require_role("manager", "director", "super_admin"))
 ):
     """
     Reject a shift allocation with a reason.
-    Only managers and directors can reject shifts.
+    Rejection rules are the same as approval rules.
     """
     try:
         rejection_reason = rejection_data.get("rejection_reason")
@@ -402,18 +498,11 @@ async def reject_shift(
                 detail=f"Cannot reject shift with status: {shift_data['status']}"
             )
         
-        # For managers, verify they manage this employee
-        if current_user["role"] == "manager":
-            employee_ref = db.collection("users").document(shift_data["employee_id"])
-            employee_doc = employee_ref.get()
-            
-            if employee_doc.exists:
-                employee_data = employee_doc.to_dict()
-                if employee_data.get("manager_id") != current_user["uid"]:
-                    raise HTTPException(
-                        status_code=403,
-                        detail="You can only reject shifts for employees under your management"
-                    )
+        if not _can_current_user_approve_shift(current_user, shift_data, {}):
+            raise HTTPException(
+                status_code=403,
+                detail="You are not allowed to reject this shift"
+            )
         
         # Update shift status
         update_data = {
@@ -553,11 +642,11 @@ async def delete_shift(
 async def update_shift(
     shift_id: str,
     shift_update: ShiftUpdate,
-    current_user: dict = Depends(require_role("lead", "manager", "director"))
+    current_user: dict = Depends(require_role("lead", "manager", "director", "hr"))
 ):
     """
     Update a shift allocation.
-    Only the creator or managers/directors can update shifts.
+    Hierarchy rules are the same as create-shift.
     Approved shifts can be edited, but will be reset to pending for re-approval.
     """
     try:
@@ -569,13 +658,14 @@ async def update_shift(
         
         shift_data = shift_doc.to_dict()
         
-        # Check permissions
-        if current_user["role"] == "lead":
-            if shift_data["created_by"] != current_user["uid"]:
-                raise HTTPException(
-                    status_code=403,
-                    detail="You can only update shifts you created"
-                )
+        # Check hierarchy permissions against the shift employee
+        employee_ref = db.collection("users").document(shift_data["employee_id"])
+        employee_doc = employee_ref.get()
+        if not employee_doc.exists:
+            raise HTTPException(status_code=404, detail="Employee not found for this shift")
+        employee_data = employee_doc.to_dict()
+        employee_data["uid"] = shift_data["employee_id"]
+        _ensure_shift_hierarchy_access(current_user, employee_data, "update")
         
         # Can only update pending or approved shifts
         if shift_data["status"] not in ["pending", "approved"]:

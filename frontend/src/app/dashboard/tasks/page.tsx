@@ -63,6 +63,7 @@ interface Employee {
   uid: string;
   name: string;
   email: string;
+  role?: string;
   department?: string;
   designation?: string;
 }
@@ -95,7 +96,7 @@ export default function TasksPage() {
   const [deletingTask, setDeletingTask] = useState<Task | null>(null);
 
   // Permissions
-  const canCreate = ['lead', 'manager', 'director', 'hr'].includes(userData?.role || '');
+  const canCreate = ['lead', 'manager', 'director', 'hr', 'super_admin'].includes(userData?.role || '');
 
   const columns: { id: Task['status']; title: string; icon: any }[] = [
     { id: 'todo', title: 'To Do', icon: AlertCircle },
@@ -122,15 +123,7 @@ export default function TasksPage() {
 
       if (response.ok) {
         const data: Task[] = await response.json();
-        if (!userData?.uid) {
-          setTasks([]);
-          return;
-        }
-        const canViewAll = ['lead', 'manager', 'director', 'hr'].includes(userData?.role || '');
-        const visibleTasks = canViewAll
-          ? data
-          : data.filter((task) => task.assigneeId === userData.uid);
-        setTasks(visibleTasks);
+        setTasks(data);
       }
     } catch (error) {
       console.error('Error fetching tasks:', error);
@@ -140,6 +133,21 @@ export default function TasksPage() {
   const fetchEmployees = async () => {
     try {
       const token = await user?.getIdToken();
+      if (!token || !userData?.uid) return;
+
+      // Lead can assign only to reporting employees.
+      if (userData.role === 'lead') {
+        const response = await fetch(`${API_BASE_URL}/users/${userData.uid}/reportees`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const reportees: Employee[] = Array.isArray(data) ? data : [];
+          setEmployees(reportees.filter((emp) => emp.role === 'employee'));
+        }
+        return;
+      }
+
       const response = await fetch(`${API_BASE_URL}/users/`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -353,7 +361,24 @@ export default function TasksPage() {
   };
 
   const getTasksByStatus = (status: Task['status']) => {
-    return tasks.filter(task => task.status === status);
+    if (status !== 'completed') {
+      return tasks.filter(task => task.status === status);
+    }
+
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    return tasks
+      .filter((task) => {
+        if (task.status !== 'completed') return false;
+        const completionTime = new Date(task.updatedAt || task.createdAt);
+        return completionTime >= sevenDaysAgo;
+      })
+      .sort((a, b) => {
+        const aTime = new Date(a.updatedAt || a.createdAt).getTime();
+        const bTime = new Date(b.updatedAt || b.createdAt).getTime();
+        return bTime - aTime;
+      });
   };
 
   const handleDragStart = (task: Task) => {
