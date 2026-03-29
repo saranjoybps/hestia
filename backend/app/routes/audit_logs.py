@@ -8,7 +8,7 @@ from app.services.audit_log import log_audit_event
 router = APIRouter(prefix="/audit-logs", tags=["Audit Logs"])
 
 
-@router.post("/", response_model=AuditLogResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=AuditLogResponse, status_code=status.HTTP_201_CREATED)
 async def create_audit_log(
     payload: AuditLogCreate,
     current_user: dict = Depends(get_current_user)
@@ -39,7 +39,7 @@ async def create_audit_log(
         )
 
 
-@router.get("/", response_model=list[AuditLogResponse])
+@router.get("", response_model=list[AuditLogResponse])
 async def list_audit_logs(
     actor_id: Optional[str] = Query(None),
     action: Optional[str] = Query(None),

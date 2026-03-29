@@ -489,34 +489,24 @@ async def get_reportees(
                 detail="Only leads, managers, and directors can view reportees"
             )
         
-        # Query reportees
-        reportees = []
-        
-        if user_role == "lead":
-            # Support both legacy manager_id linkage and lead_id linkage for leads
-            lead_query = db.collection("users").where("lead_id", "==", user_id)
-            manager_query = db.collection("users").where("manager_id", "==", user_id)
+        # Single reporting flow: manager_id is the source of truth.
+        # Include legacy camelCase and legacy lead fields as read fallback.
+        user_map = {}
 
-            user_map = {}
-            for doc in lead_query.stream():
-                user_data = doc.to_dict()
-                user_data["uid"] = doc.id
-                user_map[doc.id] = UserResponse(**user_data)
-            for doc in manager_query.stream():
+        manager_query = db.collection("users").where("manager_id", "==", user_id)
+        manager_query_alt = db.collection("users").where("managerId", "==", user_id)
+        legacy_lead_query = db.collection("users").where("lead_id", "==", user_id)
+        legacy_lead_query_alt = db.collection("users").where("leadId", "==", user_id)
+
+        for query in [manager_query, manager_query_alt, legacy_lead_query, legacy_lead_query_alt]:
+            for doc in query.stream():
                 if doc.id in user_map:
                     continue
                 user_data = doc.to_dict()
                 user_data["uid"] = doc.id
                 user_map[doc.id] = UserResponse(**user_data)
 
-            reportees = list(user_map.values())
-        elif user_role in ["manager", "director"]:
-            query = db.collection("users").where("manager_id", "==", user_id)
-
-            for doc in query.stream():
-                user_data = doc.to_dict()
-                user_data["uid"] = doc.id
-                reportees.append(UserResponse(**user_data))
+        reportees = list(user_map.values())
         
         return reportees
         

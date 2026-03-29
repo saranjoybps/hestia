@@ -23,10 +23,19 @@ async def create_attendance(
         
         # Check permissions
         if user_role == "lead":
-            # Verify the user is a reportee
+            # Single reporting flow: manager_id is source of truth.
+            # Keep legacy lead fields as read fallback for older records.
             user_ref = db.collection("users").document(attendance_data.user_id)
             user_doc = user_ref.get()
-            if not user_doc.exists or user_doc.to_dict().get("lead_id") != current_user.get("uid"):
+            if not user_doc.exists:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You can only mark attendance for your reportees"
+                )
+            reportee = user_doc.to_dict()
+            manager_id = reportee.get("manager_id") or reportee.get("managerId")
+            legacy_lead_id = reportee.get("lead_id") or reportee.get("leadId")
+            if manager_id != current_user.get("uid") and legacy_lead_id != current_user.get("uid"):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="You can only mark attendance for your reportees"

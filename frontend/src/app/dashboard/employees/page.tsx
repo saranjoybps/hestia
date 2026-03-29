@@ -178,6 +178,7 @@ export default function EmployeesPage() {
     designation: '',
     phone: '',
     dateOfJoining: new Date().toISOString().split('T')[0],
+    managerId: '',
   });
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
@@ -228,7 +229,7 @@ export default function EmployeesPage() {
       if (canViewReportees) {
         fetchReportees();
       }
-      if (canCreateEmployee) {
+      if (canEditAll) {
         fetchManagers();
       }
       // Fetch pending requests for HR and directors
@@ -531,6 +532,7 @@ export default function EmployeesPage() {
             email: formData.email,
             dateOfJoining: formData.dateOfJoining || null,
             manager_id: formData.managerId || null,
+            lead_id: null,
           }
         : {
             name: formData.name,
@@ -637,6 +639,7 @@ export default function EmployeesPage() {
       designation: '',
       phone: '',
       dateOfJoining: new Date().toISOString().split('T')[0],
+      managerId: '',
     });
   };
 
@@ -651,7 +654,7 @@ export default function EmployeesPage() {
       designation: employee.designation,
       phone: employee.phone || '',
       dateOfJoining: normalizeDateInput(employee.dateOfJoining),
-      managerId: employee.managerId,
+      managerId: employee.managerId || '',
     });
     setShowEditDialog(true);
   };
@@ -1439,7 +1442,9 @@ export default function EmployeesPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">None</SelectItem>
-                    {managers.map(manager => (
+                    {managers
+                      .filter((manager) => manager.role === 'lead' || manager.role === 'manager' || manager.role === 'director' || manager.uid === formData.managerId)
+                      .map(manager => (
                       <SelectItem key={manager.uid} value={manager.uid}>
                         {getFullName(manager.name, manager.lastName)} - {manager.role}
                       </SelectItem>
@@ -1447,6 +1452,7 @@ export default function EmployeesPage() {
                   </SelectContent>
                 </Select>
               </div>
+
             </div>
           </div>
 
@@ -1583,7 +1589,9 @@ export default function EmployeesPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">None</SelectItem>
-                          {managers.map(manager => (
+                          {managers
+                            .filter((manager) => manager.role === 'lead' || manager.role === 'manager' || manager.role === 'director' || manager.uid === formData.managerId)
+                            .map(manager => (
                             <SelectItem key={manager.uid} value={manager.uid}>
                               {getFullName(manager.name, manager.lastName)} - {manager.role}
                             </SelectItem>

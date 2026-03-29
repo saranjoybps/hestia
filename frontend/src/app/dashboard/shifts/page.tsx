@@ -148,10 +148,14 @@ export default function ShiftsPage() {
 
   const canCreateShift = isLead || isManager || isDirector || isHR || isSuperAdmin;
   const canApprove = isManager || isDirector || isSuperAdmin;
+  const canViewOwnShiftsTab = role === 'employee' || isLead || isManager || isHR;
 
   useEffect(() => {
     if (user) {
       fetchShifts();
+      if (canViewOwnShiftsTab) {
+        fetchMyShifts();
+      }
       if (canCreateShift) {
         fetchReportees();
       }
@@ -159,7 +163,7 @@ export default function ShiftsPage() {
         fetchPendingApprovals();
       }
     }
-  }, [user]);
+  }, [user, userData?.uid, role]);
 
   const fetchReportees = async () => {
     try {
@@ -227,16 +231,29 @@ export default function ShiftsPage() {
       if (response.ok) {
         const data = await response.json();
         const shiftsList = data.shifts || [];
-
-        if (userData?.role === 'employee') {
-          setMyShifts(shiftsList);
-        } else {
-          setShifts(shiftsList);
-        }
+        setShifts(shiftsList);
       }
     } catch (error) {
       console.error('Error fetching shifts:', error);
       toast.error('Failed to fetch shifts');
+    }
+  };
+
+  const fetchMyShifts = async () => {
+    try {
+      const token = await user?.getIdToken();
+      if (!token || !userData?.uid) return;
+
+      const response = await fetch(`${API_BASE_URL}/shifts?employee_id=${userData.uid}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setMyShifts(data.shifts || []);
+      }
+    } catch (error) {
+      console.error('Error fetching my shifts:', error);
     }
   };
 
@@ -284,6 +301,9 @@ export default function ShiftsPage() {
       setShowCreateDialog(false);
       resetForm();
       fetchShifts();
+      if (canViewOwnShiftsTab) {
+        fetchMyShifts();
+      }
       if (canApprove) {
         fetchPendingApprovals();
       }
@@ -378,6 +398,9 @@ export default function ShiftsPage() {
       setShowBulkDialog(false);
       resetBulkForm();
       fetchShifts();
+      if (canViewOwnShiftsTab) {
+        fetchMyShifts();
+      }
       if (canApprove) {
         fetchPendingApprovals();
       }
@@ -415,6 +438,9 @@ export default function ShiftsPage() {
       setEditingShift(null);
       resetForm();
       fetchShifts();
+      if (canViewOwnShiftsTab) {
+        fetchMyShifts();
+      }
     } catch (error) {
       console.error('Update shift error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to update shift');
@@ -444,6 +470,9 @@ export default function ShiftsPage() {
       toast.success('Shift approved successfully!');
       fetchPendingApprovals();
       fetchShifts();
+      if (canViewOwnShiftsTab) {
+        fetchMyShifts();
+      }
     } catch (error) {
       console.error('Approve shift error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to approve shift');
@@ -474,6 +503,9 @@ export default function ShiftsPage() {
       toast.success('Shift rejected.');
       fetchPendingApprovals();
       fetchShifts();
+      if (canViewOwnShiftsTab) {
+        fetchMyShifts();
+      }
     } catch (error) {
       console.error('Reject shift error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to reject shift');
@@ -501,6 +533,9 @@ export default function ShiftsPage() {
 
       toast.success('Shift deleted successfully!');
       fetchShifts();
+      if (canViewOwnShiftsTab) {
+        fetchMyShifts();
+      }
     } catch (error) {
       console.error('Delete shift error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to delete shift');
@@ -603,8 +638,8 @@ export default function ShiftsPage() {
           fetchPendingApprovals();
         } else if (value === 'all-shifts') {
           fetchShifts();
-        } else if (value === 'my-shifts') {
-          fetchShifts();
+        } else if (value === 'my-shifts' && canViewOwnShiftsTab) {
+          fetchMyShifts();
         }
       }} className="space-y-4">
         <TabsList>
@@ -613,6 +648,9 @@ export default function ShiftsPage() {
           ) : (
             <>
               <TabsTrigger value="all-shifts">All Shifts ({shifts.length})</TabsTrigger>
+              {canViewOwnShiftsTab && (
+                <TabsTrigger value="my-shifts">My Shifts ({myShifts.length})</TabsTrigger>
+              )}
               {canApprove && (
                 <TabsTrigger value="pending">Pending Approvals ({pendingApprovals.length})</TabsTrigger>
               )}
@@ -778,7 +816,7 @@ export default function ShiftsPage() {
         )}
 
         {/* My Shifts Tab */}
-        {userData?.role === 'employee' && (
+        {canViewOwnShiftsTab && (
           <TabsContent value="my-shifts" className="space-y-4">
             <Card>
               <CardHeader>

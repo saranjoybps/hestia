@@ -143,6 +143,7 @@ export default function AttendancePage() {
     notes: '',
   });
   const [teamAttendanceMap, setTeamAttendanceMap] = useState<Record<string, AttendanceRecord['status']>>({});
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
   const [selectedDayRecords, setSelectedDayRecords] = useState<AttendanceRecord[]>([]);
 
@@ -287,11 +288,17 @@ export default function AttendancePage() {
 
   const handleMarkAttendance = async () => {
     const dateObj = new Date(markAttendanceData.date);
-    const invalidMembers = teamMembers.filter(m => {
+    const selectedMembers = teamMembers.filter((m) => selectedMemberIds.includes(m.uid));
+    const invalidMembers = selectedMembers.filter(m => {
       const shift = teamShifts[m.uid];
       const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
       return !shift && !isWeekend;
     });
+
+    if (selectedMembers.length === 0) {
+      toast.error('Please select at least one employee');
+      return;
+    }
 
     if (invalidMembers.length > 0) {
       toast.error(
@@ -303,8 +310,23 @@ export default function AttendancePage() {
     setLoading(true);
     try {
       const token = await user?.getIdToken();
+      // Build submit map from visible team members so default "present"
+      // is persisted even when user doesn't manually change each select.
+      const effectiveAttendanceMap: Record<string, AttendanceRecord['status']> = {};
+      selectedMembers.forEach((member) => {
+        const shift = teamShifts[member.uid];
+        const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+        if (!shift && !isWeekend) return; // Skip disabled members
+        effectiveAttendanceMap[member.uid] = teamAttendanceMap[member.uid] || 'present';
+      });
 
-      const promises = Object.entries(teamAttendanceMap).map(async ([userId, status]) => {
+      if (Object.keys(effectiveAttendanceMap).length === 0) {
+        toast.error('No eligible team members to mark attendance');
+        setLoading(false);
+        return;
+      }
+
+      const promises = Object.entries(effectiveAttendanceMap).map(async ([userId, status]) => {
         const response = await fetch(`${API_BASE_URL}/attendance`, {
           method: 'POST',
           headers: {
@@ -332,10 +354,11 @@ export default function AttendancePage() {
 
       await Promise.all(promises);
 
-      toast.success(`Attendance marked successfully for ${Object.keys(teamAttendanceMap).length} team member(s)!`);
+      toast.success(`Attendance marked successfully for ${Object.keys(effectiveAttendanceMap).length} team member(s)!`);
       setShowMarkAttendanceDialog(false);
       resetMarkAttendanceForm();
       setTeamAttendanceMap({});
+      setSelectedMemberIds([]);
       fetchAttendanceRecords();
     } catch (error) {
       console.error('Mark attendance error:', error);
@@ -392,6 +415,7 @@ export default function AttendancePage() {
       status: 'present',
       notes: '',
     });
+    setSelectedMemberIds([]);
   };
 
   const handleDayClick = (date: Date) => {
@@ -549,10 +573,19 @@ export default function AttendancePage() {
           {canMarkAttendance && (
             <Button onClick={() => {
               const initialMap: Record<string, AttendanceRecord['status']> = {};
+              const initialSelected: string[] = [];
+              const selectedDate = new Date(markAttendanceData.date);
+              const dayOfWeek = selectedDate.getDay();
+              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
               teamMembers.forEach(member => {
                 initialMap[member.uid] = 'present';
+                const shift = teamShifts[member.uid];
+                if (shift || isWeekend) {
+                  initialSelected.push(member.uid);
+                }
               });
               setTeamAttendanceMap(initialMap);
+              setSelectedMemberIds(initialSelected);
               fetchTeamShiftsForDate(markAttendanceData.date);
               setShowMarkAttendanceDialog(true);
             }}>
@@ -936,14 +969,45 @@ export default function AttendancePage() {
 
             {teamMembers.length > 0 ? (
               <div className="space-y-4">
-                <p className="text-sm font-medium text-gray-700 sticky top-0 bg-white py-2 z-10">
-                  Team Members
-                </p>
+                <div className="sticky top-0 bg-white py-2 z-10 flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-700">Team Members</p>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const selectedDate = new Date(markAttendanceData.date);
+                        const dayOfWeek = selectedDate.getDay();
+                        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                        const ids = teamMembers
+                          .filter((m) => {
+                            const shift = teamShifts[m.uid];
+                            return !!shift || isWeekend;
+                          })
+                          .map((m) => m.uid);
+                        setSelectedMemberIds(ids);
+                      }}
+                    >
+                      Select All
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedMemberIds([])}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
                 {teamMembers.map((member) => {
                   const shift = teamShifts[member.uid];
                   const selectedDate = new Date(markAttendanceData.date);
                   const dayOfWeek = selectedDate.getDay();
                   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                  const canSelect = !!shift || isWeekend;
+                  const isSelected = selectedMemberIds.includes(member.uid);
 
                   return (
                     <div
@@ -951,9 +1015,24 @@ export default function AttendancePage() {
                       className="p-4 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow"
                     >
                       <div className="space-y-3">
-                        <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-gray-900 text-sm">{member.name}</p>
-                          <p className="text-xs text-gray-500">{member.designation} • {member.department}</p>
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            disabled={!canSelect}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedMemberIds((prev) => [...prev, member.uid]);
+                              } else {
+                                setSelectedMemberIds((prev) => prev.filter((id) => id !== member.uid));
+                              }
+                            }}
+                            className="mt-1 h-4 w-4 rounded border-gray-300"
+                          />
+                          <div className="flex flex-col gap-1">
+                            <p className="font-semibold text-gray-900 text-sm">{member.name}</p>
+                            <p className="text-xs text-gray-500">{member.designation} • {member.department}</p>
+                          </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           {shift ? (
@@ -987,7 +1066,7 @@ export default function AttendancePage() {
                               [member.uid]: value as AttendanceRecord['status'],
                             });
                           }}
-                          disabled={!shift && !isWeekend}
+                          disabled={!canSelect || !isSelected}
                         >
                           <SelectTrigger id={`attendance-${member.uid}`}>
                             <SelectValue />
@@ -1002,7 +1081,7 @@ export default function AttendancePage() {
                             <SelectItem value="holiday">Holiday</SelectItem>
                           </SelectContent>
                         </Select>
-                        {!shift && !isWeekend && (
+                        {!canSelect && (
                           <p className="text-xs text-red-600 font-medium">Cannot mark – no shift assigned</p>
                         )}
                       </div>
@@ -1022,7 +1101,7 @@ export default function AttendancePage() {
             <Button variant="outline" onClick={() => { setShowMarkAttendanceDialog(false); resetMarkAttendanceForm(); }}>
               Cancel
             </Button>
-            <Button onClick={handleMarkAttendance} disabled={loading || teamMembers.length === 0}>
+            <Button onClick={handleMarkAttendance} disabled={loading || teamMembers.length === 0 || selectedMemberIds.length === 0}>
               {loading ? 'Saving...' : 'Mark Attendance'}
             </Button>
           </div>
