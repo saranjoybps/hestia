@@ -7,7 +7,9 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (typeof window !== 'undefined' ? `${window.location.origin}/api` : 'http://localhost:8000/api');
 import {
   Table,
   TableBody,
@@ -188,7 +190,7 @@ export default function EmployeesPage() {
   // Permissions
   const isHR = userData?.role === 'hr';
   const isDirector = userData?.role === 'director';
-  const canCreateEmployee = isHR;
+  const canCreateEmployee = isHR || isDirector;
   const canEditAll = isHR || isDirector; // HR or Director can edit all fields
   const canDeactivate = isDirector;
   const canActivate = isDirector;
@@ -223,7 +225,7 @@ export default function EmployeesPage() {
   };
 
   useEffect(() => {
-    if (user) {
+    if (user && userData) {
       fetchDepartments();
       fetchEmployees();
       if (canViewReportees) {
@@ -233,11 +235,11 @@ export default function EmployeesPage() {
         fetchManagers();
       }
       // Fetch pending requests for HR and directors
-      if (isHR) {
+      if (isHR || isDirector) {
         fetchPendingRequests();
       }
     }
-  }, [user, currentPage, searchQuery, departmentFilter, statusFilter, roleFilter]);
+  }, [user, userData, canViewReportees, canEditAll, isHR, isDirector, currentPage, searchQuery, departmentFilter, statusFilter, roleFilter]);
 
   const fetchDepartments = async () => {
     try {

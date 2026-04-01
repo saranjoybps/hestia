@@ -98,7 +98,10 @@ async def list_onboarding_requests(
             )
         
         # Order by created date descending
-        query = query.order_by("created_at", direction="DESCENDING")
+        # Firestore requires a composite index for (status, created_at). To avoid 400 index errors
+        # in environments without that index, only apply the ordering when no status filter is used.
+        if not status_filter:
+            query = query.order_by("created_at", direction="DESCENDING")
         
         requests = []
         for doc in query.stream():
