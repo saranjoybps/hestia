@@ -14,6 +14,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
+import os
 from google.cloud import firestore
 
 router = APIRouter()
@@ -71,6 +72,51 @@ def calculate_employment_period(join_date_str: str, last_working_day_str: str) -
     except:
         return "Duration not calculated"
 
+def number_to_words_indian(number: int) -> str:
+    """Convert a number to words in the Indian numbering system (up to crores)."""
+    if number == 0:
+        return "zero"
+    if number < 0:
+        return "minus " + number_to_words_indian(abs(number))
+
+    ones = [
+        "", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+        "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+        "seventeen", "eighteen", "nineteen"
+    ]
+    tens = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
+
+    def two_digits(n: int) -> str:
+        if n < 20:
+            return ones[n]
+        return tens[n // 10] + ("" if n % 10 == 0 else " " + ones[n % 10])
+
+    parts = []
+    crore = number // 10000000
+    number %= 10000000
+    if crore:
+        parts.append(two_digits(crore) + " crore")
+
+    lakh = number // 100000
+    number %= 100000
+    if lakh:
+        parts.append(two_digits(lakh) + " lakh")
+
+    thousand = number // 1000
+    number %= 1000
+    if thousand:
+        parts.append(two_digits(thousand) + " thousand")
+
+    hundred = number // 100
+    number %= 100
+    if hundred:
+        parts.append(ones[hundred] + " hundred")
+
+    if number:
+        parts.append(two_digits(number))
+
+    return " ".join(parts).strip()
+
 # Helper function to generate PDF
 def generate_letter_pdf(letter_data: dict, letter_type: str) -> BytesIO:
     """Generate PDF letter using ReportLab"""
@@ -85,36 +131,37 @@ def generate_letter_pdf(letter_data: dict, letter_type: str) -> BytesIO:
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
-        fontSize=24,
-        textColor=colors.HexColor('#1e40af'),
-        spaceAfter=12,
-        alignment=TA_CENTER,
-        fontName='Helvetica-Bold'
+        fontSize=16,
+        textColor=colors.black,
+        spaceAfter=8,
+        alignment=TA_LEFT,
+        fontName='Helvetica'
     )
     
     heading_style = ParagraphStyle(
         'CustomHeading',
         parent=styles['Heading2'],
-        fontSize=14,
-        textColor=colors.HexColor('#1e40af'),
-        spaceAfter=8,
-        fontName='Helvetica-Bold'
+        fontSize=12,
+        textColor=colors.black,
+        spaceAfter=4,
+        fontName='Helvetica-Bold',
+        alignment=TA_LEFT
     )
     
     normal_style = ParagraphStyle(
         'CustomNormal',
         parent=styles['Normal'],
-        fontSize=11,
-        leading=16,
+        fontSize=10,
+        leading=12,
         alignment=TA_LEFT,
-        spaceAfter=10
+        spaceAfter=6
     )
     
     center_style = ParagraphStyle(
         'CustomCenter',
         parent=styles['Normal'],
-        fontSize=11,
-        alignment=TA_CENTER,
+        fontSize=10,
+        alignment=TA_LEFT,
         spaceAfter=8
     )
     
@@ -122,23 +169,62 @@ def generate_letter_pdf(letter_data: dict, letter_type: str) -> BytesIO:
         'CustomRight',
         parent=styles['Normal'],
         fontSize=10,
-        alignment=TA_RIGHT,
+        alignment=TA_LEFT,
         spaceAfter=6
     )
+
+    header_right_style = ParagraphStyle(
+        'HeaderRight',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=12,
+        alignment=TA_RIGHT,
+        textColor=colors.black
+    )
+
+    line_color = colors.HexColor('#38bdf8')
+
+    def draw_page_lines(canvas_obj, doc_obj):
+        canvas_obj.saveState()
+        canvas_obj.setStrokeColor(line_color)
+        canvas_obj.setLineWidth(1.5)
+        page_width, page_height = A4
+        top_y = page_height - 1.05 * inch
+        bottom_y = 0.65 * inch
+        canvas_obj.line(doc_obj.leftMargin, top_y, page_width - doc_obj.rightMargin, top_y)
+        canvas_obj.line(doc_obj.leftMargin, bottom_y, page_width - doc_obj.rightMargin, bottom_y)
+        canvas_obj.restoreState()
     
-    # Company Header
-    story.append(Paragraph("JOYRTS", title_style))
-    story.append(Paragraph("Human Resources Management", center_style))
-    story.append(Paragraph("Building Innovation Together", center_style))
-    story.append(Spacer(1, 0.3*inch))
-    
-    # Date and Reference
-    current_date = datetime.now().strftime("%B %d, %Y")
-    story.append(Paragraph(f"Date: {current_date}", right_style))
-    
-    ref_number = letter_data.get('referenceNumber', f"JOYRTS/HR/{datetime.now().strftime('%Y%m%d')}/{letter_data['employeeId']}")
-    story.append(Paragraph(f"Ref: {ref_number}", right_style))
-    story.append(Spacer(1, 0.3*inch))
+    # Company Header with logo and contact
+    current_date = datetime.now().strftime("%d/%m/%Y")
+    logo_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "frontend", "public", "logo.png")
+    )
+    if os.path.exists(logo_path):
+        logo = Image(logo_path, width=1.4*inch, height=0.5*inch)
+    else:
+        logo = Paragraph("JOYRTS", title_style)
+
+    header_right = Paragraph(
+        f"admin@joyrts.com<br/>Date: {current_date}",
+        header_right_style
+    )
+
+    header_table = Table(
+        [[logo, header_right]],
+        colWidths=[2.0*inch, 4.2*inch]
+    )
+    header_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (0, 0), "LEFT"),
+        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(header_table)
+    story.append(Spacer(1, 0.1*inch))
     
     # Letter Title and Content based on type
     if letter_type == 'offer':
@@ -147,75 +233,131 @@ def generate_letter_pdf(letter_data: dict, letter_type: str) -> BytesIO:
         story.append(Paragraph(letter_title, heading_style))
         story.append(Spacer(1, 0.2*inch))
         
-        story.append(Paragraph(f"{letter_data['employeeName']},", normal_style))
+        story.append(Paragraph("<b>Subject: Offer of Employment and Contractual Commitment</b>", normal_style))
         story.append(Spacer(1, 0.1*inch))
         
-        story.append(Paragraph("Congratulations!", normal_style))
+        story.append(Paragraph(f"Dear {letter_data['employeeName']},", normal_style))
         story.append(Spacer(1, 0.1*inch))
         
-        start_date_formatted = datetime.fromisoformat(letter_data['startDate'].replace('Z', '+00:00')).strftime('%B %d, %Y')
-        intro = f"""
-        We are pleased to appoint you as <b>{letter_data['designation']}</b>, with effect from <b>{start_date_formatted}</b>, on the following terms and conditions:
-        """
-        story.append(Paragraph(intro, normal_style))
+        story.append(Paragraph(
+            "We are pleased to extend this formal offer of employment to you following your application and successful interview with Joyrts.",
+            normal_style
+        ))
+        story.append(Paragraph(
+            f"We are delighted to offer you the position of <b>{letter_data['designation']}</b>. We believe your skills and experience will be a valuable addition to our organization.",
+            normal_style
+        ))
         story.append(Spacer(1, 0.2*inch))
         
-        # Terms and conditions
+        start_date_formatted = datetime.fromisoformat(letter_data['startDate'].replace('Z', '+00:00')).strftime('%d/%m/%Y')
         probation = letter_data.get('probationPeriod', 'three months')
         notice = letter_data.get('noticePeriod', '45 days')
+        salary_raw = str(letter_data.get('annualSalary', '') or '')
+        salary_digits = ''.join(ch for ch in salary_raw if ch.isdigit())
+        salary_value = int(salary_digits) if salary_digits else 0
+        salary_words = number_to_words_indian(salary_value) if salary_value else salary_raw
+        salary_display = salary_value if salary_value else salary_raw
         
-        terms = [
-            f"1. You will be on probation for a period of <b>{probation}</b> from <b>{start_date_formatted}</b> and shall be confirmed after the said period subject to your meeting our performance standards.",
-            f"2. Your total emoluments per annum including shift allowance and other related allowances would be <b>₹{letter_data['annualSalary']}</b>.",
-            "3. Your salary is strictly confidential and we expect that you maintain the confidentiality of the same. We reiterate that your pay scale is a confidential matter between you and the Company and we reaffirm that the Company shall view any breach of confidentiality with utmost seriousness.",
-            "4. You shall be responsible for all the activities related to responsibilities assigned to you and shall achieve all the targets set for you periodically.",
-            "5. Your continuation in the organization shall be based purely on your performance and adhering to the organization's policies and procedures. You shall maintain proper discipline and dignity of your office and shall deal with all matters with sobriety.",
-            "6. You will not engage in any other business or service or any other occupation either professional or honorary, or part time, during your period of employment with us.",
-            "7. You will be representing the organization purely in connection with soliciting business from potential clients and will not indulge in any activity that would be harmful to the interests of the organization.",
-            "8. You will not be eligible for any leave during the probation period else it consider as LOP.",
-            "9. Should you remain absent from work, without reasonable explanation, for more than seven (7) consecutive days, it will be presumed that you are no longer interested in working and have abandoned its services, thereby terminating your contract of service. In such case, you will be required to return any company asset or property that you have been provided with at the time of your employment.",
-            "10. During the employment period JOY RESEARCH AND TECHNOLOGY SERVICES PRIVATE LIMITED as an employer is at will to end the employment relationship at any time, with or without notice or cause for unsatisfactory performance.",
-            f"11. The notice period after probation will be <b>{notice}</b> notice on the employee's side. You are not allowed to take leaves during notice period, if availed leave the notice period will be extended.",
-            "12. You will be provided with complete training and stationary support from the organization as and when required.",
-            "13. During the period of this appointment, you will not secure any other post without the previous consent of the management in writing.",
-            "14. Your appointment will be subject to the verification of your service record and identification.",
-            "15. You will observe working timings and holidays as applicable to customer's location and customer's place of work.",
-            "16. You will forthwith inform the concern person in the organization of any change in your residential address.",
-            "17. As a condition of your employment, you will be required to agree to Non-Compete with the Company. The purpose of this non-compete agreement is to protect the Company's legitimate business interests, including but not limited to its confidential information, trade secrets, client relationships, and intellectual property.",
-        ]
-        
-        for term in terms:
-            story.append(Paragraph(term, normal_style))
-            story.append(Spacer(1, 0.15*inch))
-        
-        story.append(Spacer(1, 0.2*inch))
-        
-        # Code of Conduct
-        story.append(Paragraph("<b>Code of Conduct:</b>", normal_style))
+        story.append(Paragraph("<b>Compensation (Annual Gross Emoluments):</b>", normal_style))
+        story.append(Paragraph(
+            f"Your annual gross compensation, inclusive of all benefits, will be INR {salary_display} (Rupees {salary_words} only).",
+            normal_style
+        ))
+        story.append(Paragraph(
+            "Your performance will be reviewed periodically, typically at the end of each financial year. Continued employment is subject to satisfactory performance as per company standards.",
+            normal_style
+        ))
         story.append(Spacer(1, 0.1*inch))
-        story.append(Paragraph("The work rules and code of conduct are very important, and the Company regards them seriously. All Employees are expected to follow these rules and maintain proper discipline, punctuality, ethical conduct, and professionalism at all times.", normal_style))
-        story.append(Spacer(1, 0.3*inch))
         
-        # Closing
-        story.append(Paragraph("You are requested to sign the duplicate and provide us the same in acceptance of the above offer.", normal_style))
+        story.append(Paragraph("<b>Joining Details:</b>", normal_style))
+        story.append(Paragraph(
+            f"Your employment will commence on {start_date_formatted}.",
+            normal_style
+        ))
+        story.append(Spacer(1, 0.1*inch))
+        
+        story.append(Paragraph("<b>Probation Period:</b>", normal_style))
+        story.append(Paragraph(
+            f"You will be on a probation period of {probation} from your date of joining.",
+            normal_style
+        ))
+        story.append(Paragraph(
+            "Upon successful completion of probation, you will be confirmed as a permanent employee of the company.",
+            normal_style
+        ))
+        story.append(Spacer(1, 0.1*inch))
+        
+        story.append(Paragraph("<b>Leave Policy:</b>", normal_style))
+        story.append(Paragraph("During probation: No leave. If leave is taken, it will be treated as loss of pay.", normal_style))
+        story.append(Paragraph("After confirmation: 2 day(s) per month. If exceeded, it will be treated as loss of pay.", normal_style))
+        story.append(Paragraph("Unused leaves may be carried forward as per company policy.", normal_style))
+        story.append(Spacer(1, 0.1*inch))
+        
+        story.append(Paragraph("<b>Contractual Commitment:</b>", normal_style))
+        story.append(Paragraph(
+            "You are required to serve a minimum period of three months from the date of joining.",
+            normal_style
+        ))
+        story.append(Paragraph(
+            "Resignation during this period will not be permitted except under exceptional circumstances and subject to management approval.",
+            normal_style
+        ))
+        story.append(Spacer(1, 0.1*inch))
+        
+        story.append(Paragraph("<b>Notice Period:</b>", normal_style))
+        story.append(Paragraph(
+            f"After completion of the commitment period, a {notice} notice period will be applicable for resignation.",
+            normal_style
+        ))
+        story.append(Paragraph("A buyout option may be available as per company policy.", normal_style))
+        story.append(Spacer(1, 0.1*inch))
+        
+        story.append(Paragraph("<b>Relocation Clause:</b>", normal_style))
+        story.append(Paragraph(
+            "You may be required to relocate to other locations based on business requirements.",
+            normal_style
+        ))
+        story.append(Spacer(1, 0.1*inch))
+        
+        story.append(Paragraph("<b>Other Terms and Conditions:</b>", normal_style))
+        story.append(Paragraph(
+            "All additional terms of employment, including roles and responsibilities, will be governed by company policies.",
+            normal_style
+        ))
+        story.append(Paragraph(
+            "Any breach of agreement may lead to appropriate action as per company rules and applicable laws.",
+            normal_style
+        ))
         story.append(Spacer(1, 0.2*inch))
-        story.append(Paragraph("Wishing you the very best and looking forward to a mutually beneficial relationship.", normal_style))
+        
+        story.append(Paragraph(
+            "We warmly welcome you to Joyrts and look forward to your valuable contribution.",
+            normal_style
+        ))
+        story.append(Paragraph(
+            "For any queries, please contact fedolin HR at jfedolin@gmail.com / Email.",
+            normal_style
+        ))
+        story.append(Spacer(1, 0.2*inch))
+        
+        story.append(Paragraph(
+            "Please sign and return a copy of this letter as a token of your acceptance of the above terms.",
+            normal_style
+        ))
+        story.append(Spacer(1, 0.1*inch))
+        story.append(Paragraph("Welcome aboard!", normal_style))
+        story.append(Paragraph("Sincerely,", normal_style))
+        story.append(Paragraph("Joyrts ltd", normal_style))
+        story.append(Spacer(1, 0.25*inch))
+        
+        story.append(Paragraph("<b>Employee Acknowledgment</b>", normal_style))
+        story.append(Paragraph(
+            f"I, {letter_data['employeeName']}, accept the terms and conditions mentioned above and agree to serve Joyrts as a {letter_data['designation']}, adhering to all policies including contractual commitment and notice period.",
+            normal_style
+        ))
         story.append(Spacer(1, 0.3*inch))
-        
-        # Signature section
-        story.append(Paragraph("For JOY RESEARCH AND TECHNOLOGY SERVICES PRIVATE LIMITED,", normal_style))
-        story.append(Spacer(1, 0.5*inch))
-        story.append(Paragraph(f"<b>{letter_data['approverName']}</b>", normal_style))
-        story.append(Paragraph("Director", normal_style))
-        story.append(Spacer(1, 0.5*inch))
-        
-        # Declaration section
-        story.append(Paragraph("<b>Declaration:</b>", normal_style))
-        story.append(Paragraph("I have read and understood the terms and conditions stated above and hereby signify my acceptance of the same.", normal_style))
-        story.append(Spacer(1, 0.5*inch))
-        story.append(Paragraph("_______________________", normal_style))
-        story.append(Paragraph("Employee's Signature", normal_style))
-        
+        story.append(Paragraph("Signature: _______________________", normal_style))
+        story.append(Paragraph("Date: _______________________", normal_style))
     elif letter_type == 'experience':
         letter_title = "EXPERIENCE CERTIFICATE"
         story.append(Paragraph(letter_title, heading_style))
@@ -253,7 +395,7 @@ def generate_letter_pdf(letter_data: dict, letter_type: str) -> BytesIO:
         """
         story.append(Paragraph(performance, normal_style))
         
-    else:
+    elif letter_type == 'exit':
         # Exit Letter Content
         story.append(Paragraph(f"Dear {letter_data['employeeName']},", normal_style))
         story.append(Spacer(1, 0.1*inch))
@@ -300,22 +442,7 @@ def generate_letter_pdf(letter_data: dict, letter_type: str) -> BytesIO:
     
     story.append(Spacer(1, 0.3*inch))
     
-    # Footer
-    footer_style = ParagraphStyle(
-        'Footer',
-        parent=styles['Normal'],
-        fontSize=8,
-        textColor=colors.HexColor('#666666'),
-        alignment=TA_CENTER,
-        leading=10
-    )
-    
-    story.append(Spacer(1, 0.5*inch))
-    story.append(Paragraph("─" * 80, footer_style))
-    story.append(Paragraph("This is a system-generated document from Joyrts HR Management App.", footer_style))
-    story.append(Paragraph(f"Generated on {current_date}", footer_style))
-    
-    # Build PDF
+    # Footer intentionally omitted\n\n    # Build PDF
     doc.build(story)
     buffer.seek(0)
     return buffer
@@ -398,27 +525,35 @@ async def create_letter_request(
                     f"{request.employeeName.replace(' ', '_')}_exit_letter.pdf"
                 )
                 
-                # Update request with file info
-                db.collection('letter_requests').document(letter_id).update({
-                    'experience_letter_link': exp_file['web_view_link'],
-                    'experience_file_id': exp_file['file_id'],
-                    'exit_letter_link': exit_file['web_view_link'],
-                    'exit_file_id': exit_file['file_id'],
-                    'pdfFiles': [
-                        {
-                            'type': 'experience',
-                            'filename': f"{request.employeeName.replace(' ', '_')}_experience_certificate.pdf",
-                            'file_id': exp_file['file_id'],
-                            'web_view_link': exp_file['web_view_link']
-                        },
-                        {
-                            'type': 'exit',
-                            'filename': f"{request.employeeName.replace(' ', '_')}_exit_letter.pdf",
-                            'file_id': exit_file['file_id'],
-                            'web_view_link': exit_file['web_view_link']
-                        }
-                    ]
-                })
+                # Update request with file info (only if upload succeeded)
+                update_payload = {}
+                pdf_files = []
+                if exp_file:
+                    update_payload.update({
+                        'experience_letter_link': exp_file['web_view_link'],
+                        'experience_file_id': exp_file['file_id'],
+                    })
+                    pdf_files.append({
+                        'type': 'experience',
+                        'filename': f"{request.employeeName.replace(' ', '_')}_experience_certificate.pdf",
+                        'file_id': exp_file['file_id'],
+                        'web_view_link': exp_file['web_view_link']
+                    })
+                if exit_file:
+                    update_payload.update({
+                        'exit_letter_link': exit_file['web_view_link'],
+                        'exit_file_id': exit_file['file_id'],
+                    })
+                    pdf_files.append({
+                        'type': 'exit',
+                        'filename': f"{request.employeeName.replace(' ', '_')}_exit_letter.pdf",
+                        'file_id': exit_file['file_id'],
+                        'web_view_link': exit_file['web_view_link']
+                    })
+                if pdf_files:
+                    update_payload['pdfFiles'] = pdf_files
+                if update_payload:
+                    db.collection('letter_requests').document(letter_id).update(update_payload)
             else:
                 # Generate single letter
                 pdf_buffer = generate_letter_pdf(letter_data, request.letterType)
@@ -429,17 +564,18 @@ async def create_letter_request(
                 # Upload to Google Drive
                 file_info = drive_service.upload_pdf(pdf_buffer, filename)
                 
-                # Update request with file info
-                db.collection('letter_requests').document(letter_id).update({
-                    f'{request.letterType}_letter_link': file_info['web_view_link'],
-                    f'{request.letterType}_file_id': file_info['file_id'],
-                    'pdfFiles': [{
-                        'type': request.letterType,
-                        'filename': filename,
-                        'file_id': file_info['file_id'],
-                        'web_view_link': file_info['web_view_link']
-                    }]
-                })
+                # Update request with file info (only if upload succeeded)
+                if file_info:
+                    db.collection('letter_requests').document(letter_id).update({
+                        f'{request.letterType}_letter_link': file_info['web_view_link'],
+                        f'{request.letterType}_file_id': file_info['file_id'],
+                        'pdfFiles': [{
+                            'type': request.letterType,
+                            'filename': filename,
+                            'file_id': file_info['file_id'],
+                            'web_view_link': file_info['web_view_link']
+                        }]
+                    })
         
         return {
             "id": letter_id,
@@ -686,17 +822,31 @@ async def download_letter_pdf(
         # Determine which file to download
         request_letter_type = letter_data['letterType']
         if not letter_type:
-            # Default behavior: download experience if available, else exit
-            letter_type = 'experience' if request_letter_type in ['experience', 'both'] else 'exit'
+            # Default behavior:
+            # - experience/both -> experience
+            # - offer -> offer
+            # - exit -> exit
+            if request_letter_type in ['experience', 'both']:
+                letter_type = 'experience'
+            elif request_letter_type == 'offer':
+                letter_type = 'offer'
+            else:
+                letter_type = 'exit'
         
         # Get file ID from letter data
         file_id_key = f"{letter_type}_file_id"
         file_id = letter_data.get(file_id_key)
         
         if not file_id:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"{letter_type.capitalize()} letter not found for this request"
+            # If Drive upload didn't happen, regenerate the PDF on the fly
+            pdf_buffer = generate_letter_pdf(letter_data, letter_type)
+            filename = f"{letter_type}_letter_{letter_data['employeeName'].replace(' ', '_')}.pdf"
+            return StreamingResponse(
+                pdf_buffer,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f"attachment; filename={filename}"
+                }
             )
         
         # Download from Google Drive
@@ -745,3 +895,8 @@ async def get_letter_details(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
+
