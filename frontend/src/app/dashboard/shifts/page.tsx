@@ -107,6 +107,12 @@ export default function ShiftsPage() {
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'approved' | 'pending' | 'rejected'>('all');
+  const [filterAllEmployee, setFilterAllEmployee] = useState<string>('all');
+  const [filterPendingEmployee, setFilterPendingEmployee] = useState<string>('all');
+  const [selectedPendingIds, setSelectedPendingIds] = useState<string[]>([]);
+  const [bulkRejectReason, setBulkRejectReason] = useState<string>('');
+  const [showBulkRejectDialog, setShowBulkRejectDialog] = useState(false);
+  const [showBulkApproveDialog, setShowBulkApproveDialog] = useState(false);
 
   // Dialogs
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -164,6 +170,10 @@ export default function ShiftsPage() {
       }
     }
   }, [user, userData?.uid, role]);
+
+  useEffect(() => {
+    setSelectedPendingIds([]);
+  }, [pendingApprovals, filterPendingEmployee]);
 
   const fetchReportees = async () => {
     try {
@@ -481,6 +491,51 @@ export default function ShiftsPage() {
     }
   };
 
+  const handleBulkApproveShifts = async (shiftIds: string[]) => {
+    if (shiftIds.length === 0) {
+      toast.error('Please select at least one pending shift');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const token = await user?.getIdToken();
+      const results = await Promise.allSettled(
+        shiftIds.map((id) =>
+          fetch(`${API_BASE_URL}/shifts/${id}/approve`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+          })
+        )
+      );
+
+      const successCount = results.filter((r) => r.status === 'fulfilled' && r.value.ok).length;
+      const failCount = results.length - successCount;
+
+      if (successCount > 0) {
+        toast.success(`Approved ${successCount} shift${successCount !== 1 ? 's' : ''}${failCount ? `, ${failCount} failed` : ''}.`);
+      } else {
+        toast.error('Failed to approve selected shifts');
+      }
+
+      setSelectedPendingIds([]);
+      fetchPendingApprovals();
+      fetchShifts();
+      if (canViewOwnShiftsTab) {
+        fetchMyShifts();
+      }
+    } catch (error) {
+      console.error('Bulk approve shifts error:', error);
+      toast.error('Failed to approve selected shifts');
+    } finally {
+      setLoading(false);
+      setShowBulkApproveDialog(false);
+    }
+  };
+
   const handleRejectShift = async (shiftId: string, reason: string) => {
     setLoading(true);
     try {
@@ -511,6 +566,57 @@ export default function ShiftsPage() {
       toast.error(error instanceof Error ? error.message : 'Failed to reject shift');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleBulkRejectShifts = async (shiftIds: string[], reason: string) => {
+    if (shiftIds.length === 0) {
+      toast.error('Please select at least one pending shift');
+      return;
+    }
+    if (!reason.trim()) {
+      toast.error('Please provide a rejection reason');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const token = await user?.getIdToken();
+      const results = await Promise.allSettled(
+        shiftIds.map((id) =>
+          fetch(`${API_BASE_URL}/shifts/${id}/reject`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({ rejection_reason: reason }),
+          })
+        )
+      );
+
+      const successCount = results.filter((r) => r.status === 'fulfilled' && r.value.ok).length;
+      const failCount = results.length - successCount;
+
+      if (successCount > 0) {
+        toast.success(`Rejected ${successCount} shift${successCount !== 1 ? 's' : ''}${failCount ? `, ${failCount} failed` : ''}.`);
+      } else {
+        toast.error('Failed to reject selected shifts');
+      }
+
+      setSelectedPendingIds([]);
+      setBulkRejectReason('');
+      fetchPendingApprovals();
+      fetchShifts();
+      if (canViewOwnShiftsTab) {
+        fetchMyShifts();
+      }
+    } catch (error) {
+      console.error('Bulk reject shifts error:', error);
+      toast.error('Failed to reject selected shifts');
+    } finally {
+      setLoading(false);
+      setShowBulkRejectDialog(false);
     }
   };
 
@@ -608,6 +714,10 @@ export default function ShiftsPage() {
     return <Badge className={colors[status] || ''}>{status.charAt(0).toUpperCase() + status.slice(1)}</Badge>;
   };
 
+  const filteredPendingApprovals = pendingApprovals.filter(
+    (shift) => filterPendingEmployee === 'all' || shift.employee_id === filterPendingEmployee
+  );
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -685,6 +795,32 @@ export default function ShiftsPage() {
                     />
                   </div>
                   <div>
+                    <Label htmlFor="employee-filter" className="text-sm">Employee</Label>
+                    <Select
+                      value={filterAllEmployee}
+                      onValueChange={(v) => setFilterAllEmployee(v)}
+                    >
+                      <SelectTrigger id="employee-filter" className="w-56">
+                        <SelectValue placeholder="All employees" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All employees</SelectItem>
+                        {[...new Map(
+                          shifts
+                            .filter((s) => s.employee_id)
+                            .map((s) => [
+                              s.employee_id,
+                              { id: s.employee_id, name: s.employee_name || s.employee_id, email: s.employee_email }
+                            ])
+                        ).values()].map((emp) => (
+                          <SelectItem key={emp.id} value={emp.id}>
+                            {emp.name}{emp.email ? ` (${emp.email})` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
                     <Label htmlFor="status-filter" className="text-sm">Status</Label>
                     <Select
                       value={filterStatus}
@@ -725,6 +861,9 @@ export default function ShiftsPage() {
                             return false;
                           }
                           if (filterEndDate && shift.shift_date > filterEndDate) {
+                            return false;
+                          }
+                          if (filterAllEmployee !== 'all' && shift.employee_id !== filterAllEmployee) {
                             return false;
                           }
                           return true;
@@ -896,9 +1035,75 @@ export default function ShiftsPage() {
                 <CardDescription>Review and approve shift allocations</CardDescription>
               </CardHeader>
               <CardContent>
-                {pendingApprovals.length > 0 ? (
+                <div className="flex flex-wrap items-end gap-4 mb-4">
+                  <div>
+                    <Label htmlFor="pending-employee-filter" className="text-sm">Employee</Label>
+                    <Select
+                      value={filterPendingEmployee}
+                      onValueChange={(v) => setFilterPendingEmployee(v)}
+                    >
+                      <SelectTrigger id="pending-employee-filter" className="w-64">
+                        <SelectValue placeholder="All employees" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All employees</SelectItem>
+                        {[...new Map(
+                          pendingApprovals
+                            .filter((s) => s.employee_id)
+                            .map((s) => [
+                              s.employee_id,
+                              { id: s.employee_id, name: s.employee_name || s.employee_id, email: s.employee_email }
+                            ])
+                        ).values()].map((emp) => (
+                          <SelectItem key={emp.id} value={emp.id}>
+                            {emp.name}{emp.email ? ` (${emp.email})` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredPendingApprovals.length > 0 &&
+                        filteredPendingApprovals.every((s) => selectedPendingIds.includes(s.id))
+                      }
+                      onChange={(e) => {
+                        const filteredIds = filteredPendingApprovals.map((s) => s.id);
+                        if (e.target.checked) {
+                          setSelectedPendingIds((prev) => Array.from(new Set([...prev, ...filteredIds])));
+                        } else {
+                          setSelectedPendingIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
+                        }
+                      }}
+                    />
+                    Select all (filtered)
+                  </label>
+
+                  <div className="ml-auto flex gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={selectedPendingIds.length === 0 || loading}
+                      onClick={() => setShowBulkRejectDialog(true)}
+                    >
+                      <XCircle className="h-4 w-4 mr-2" />
+                      Reject Selected
+                    </Button>
+                    <Button
+                      disabled={selectedPendingIds.length === 0 || loading}
+                      onClick={() => setShowBulkApproveDialog(true)}
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Approve Selected
+                    </Button>
+                  </div>
+                </div>
+
+                {filteredPendingApprovals.length > 0 ? (
                   <div className="space-y-4">
-                    {pendingApprovals.map((shift) => (
+                    {filteredPendingApprovals.map((shift) => (
                       <Card key={shift.id} className="border border-yellow-200 dark:border-yellow-800">
                         <CardContent className="pt-6">
                           <div className="space-y-4">
@@ -910,7 +1115,23 @@ export default function ShiftsPage() {
                                   {getShiftTypeBadge(shift.shift_type)}
                                 </div>
                               </div>
-                              {getStatusBadge(shift.status)}
+                              <div className="flex items-center gap-3">
+                                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedPendingIds.includes(shift.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSelectedPendingIds((prev) => Array.from(new Set([...prev, shift.id])));
+                                      } else {
+                                        setSelectedPendingIds((prev) => prev.filter((id) => id !== shift.id));
+                                      }
+                                    }}
+                                  />
+                                  Select
+                                </label>
+                                {getStatusBadge(shift.status)}
+                              </div>
                             </div>
 
                             <Separator />
@@ -1025,6 +1246,58 @@ export default function ShiftsPage() {
           </TabsContent>
         )}
       </Tabs>
+
+      {/* Bulk Approve Dialog */}
+      <AlertDialog open={showBulkApproveDialog} onOpenChange={setShowBulkApproveDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve Selected Shifts</AlertDialogTitle>
+            <AlertDialogDescription>
+              Approve {selectedPendingIds.length} selected shift{selectedPendingIds.length !== 1 ? 's' : ''}?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-green-600 hover:bg-green-700"
+              onClick={() => handleBulkApproveShifts(selectedPendingIds)}
+            >
+              Approve Selected
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Reject Dialog */}
+      <AlertDialog open={showBulkRejectDialog} onOpenChange={setShowBulkRejectDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject Selected Shifts</AlertDialogTitle>
+            <AlertDialogDescription>
+              Provide a reason for rejecting {selectedPendingIds.length} selected shift{selectedPendingIds.length !== 1 ? 's' : ''}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <Label htmlFor="bulk-reject-reason">Rejection Reason *</Label>
+            <Input
+              id="bulk-reject-reason"
+              placeholder="Enter reason for rejection..."
+              className="mt-2"
+              value={bulkRejectReason}
+              onChange={(e) => setBulkRejectReason(e.target.value)}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setBulkRejectReason('')}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => handleBulkRejectShifts(selectedPendingIds, bulkRejectReason)}
+            >
+              Reject Selected
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Create Shift Dialog */}
       <Sheet open={showCreateDialog} onOpenChange={setShowCreateDialog}>

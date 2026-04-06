@@ -74,6 +74,7 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('all');
 
   // Dialogs
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -361,14 +362,18 @@ export default function TasksPage() {
   };
 
   const getTasksByStatus = (status: Task['status']) => {
+    const filteredTasks = selectedEmployeeId === 'all'
+      ? tasks
+      : tasks.filter((task) => task.assigneeId === selectedEmployeeId);
+
     if (status !== 'completed') {
-      return tasks.filter(task => task.status === status);
+      return filteredTasks.filter(task => task.status === status);
     }
 
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    return tasks
+    return filteredTasks
       .filter((task) => {
         if (task.status !== 'completed') return false;
         const completionTime = new Date(task.updatedAt || task.createdAt);
@@ -486,10 +491,30 @@ export default function TasksPage() {
           <p className="text-gray-600 mt-1">Organize and track tasks with Kanban board</p>
         </div>
         {canCreate && (
-          <Button onClick={() => setShowCreateDialog(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Task
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="min-w-[220px]">
+              <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
+                <SelectTrigger aria-label="Filter tasks by employee">
+                  <SelectValue placeholder="Filter by employee" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Employees</SelectItem>
+                  {employees.map((emp) => (
+                    <SelectItem key={emp.uid} value={emp.uid}>
+                      <div className="flex flex-col">
+                        <span>{emp.name}</span>
+                        <span className="text-xs text-gray-500">{emp.designation} - {emp.department}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={() => setShowCreateDialog(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Task
+            </Button>
+          </div>
         )}
       </div>
 
@@ -572,7 +597,7 @@ export default function TasksPage() {
                       <SelectItem key={emp.uid} value={emp.uid}>
                         <div className="flex flex-col">
                           <span>{emp.name}</span>
-                          <span className="text-xs text-gray-500">{emp.designation} • {emp.department}</span>
+                          <span className="text-xs text-gray-500">{emp.designation} - {emp.department}</span>
                         </div>
                       </SelectItem>
                     ))}

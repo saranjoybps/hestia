@@ -160,8 +160,8 @@ export default function EmployeesPage() {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'inactive' | 'reportees' | 'my-requests' | 'pending'>('all');
 
   // Dialogs
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -227,7 +227,9 @@ export default function EmployeesPage() {
   useEffect(() => {
     if (user && userData) {
       fetchDepartments();
-      fetchEmployees();
+      if (activeTab === 'all' || activeTab === 'inactive') {
+        fetchEmployees();
+      }
       if (canViewReportees) {
         fetchReportees();
       }
@@ -239,7 +241,7 @@ export default function EmployeesPage() {
         fetchPendingRequests();
       }
     }
-  }, [user, userData, canViewReportees, canEditAll, isHR, isDirector, currentPage, searchQuery, departmentFilter, statusFilter, roleFilter]);
+  }, [user, userData, canViewReportees, canEditAll, isHR, isDirector, activeTab, currentPage, searchQuery, departmentFilter, roleFilter]);
 
   const fetchDepartments = async () => {
     try {
@@ -260,12 +262,13 @@ export default function EmployeesPage() {
   const fetchEmployees = async () => {
     try {
       const token = await user?.getIdToken();
+      const statusParam = activeTab === 'inactive' ? 'inactive' : 'active';
       const params = new URLSearchParams({
         page: currentPage.toString(),
         limit: itemsPerPage.toString(),
         ...(searchQuery && { search: searchQuery }),
         ...(departmentFilter !== 'all' && { department: departmentFilter }),
-        ...(statusFilter !== 'all' && { status: statusFilter }),
+        ...(statusParam && { status: statusParam }),
         ...(roleFilter !== 'all' && { role: roleFilter }),
       });
 
@@ -695,9 +698,20 @@ export default function EmployeesPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="all" className="space-y-4">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          setActiveTab(value as typeof activeTab);
+          setCurrentPage(1);
+        }}
+        defaultValue="all"
+        className="space-y-4"
+      >
         <TabsList>
           <TabsTrigger value="all">All Employees</TabsTrigger>
+          {isDirector && (
+            <TabsTrigger value="inactive">Inactive Employees</TabsTrigger>
+          )}
           {canViewReportees && (
             <TabsTrigger value="reportees">My Team ({reportees.length})</TabsTrigger>
           )}
@@ -724,7 +738,7 @@ export default function EmployeesPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Filters */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -749,17 +763,6 @@ export default function EmployeesPage() {
                     {departments.map(dept => (
                       <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
                     ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -828,16 +831,6 @@ export default function EmployeesPage() {
                                     }}
                                   >
                                     <Trash2 className="h-4 w-4 text-red-600" />
-                                  </Button>
-                                )}
-                                {canActivate && employee.uid !== userData?.uid && employee.status === 'inactive' && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setActivatingEmployee(employee)}
-                                    className="text-green-600"
-                                  >
-                                    <RotateCcw className="h-4 w-4" />
                                   </Button>
                                 )}
                               </div>
@@ -930,6 +923,213 @@ export default function EmployeesPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Inactive Employees Tab (Director Only) */}
+        {isDirector && (
+          <TabsContent value="inactive" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Inactive Employees</CardTitle>
+                    <CardDescription>
+                      {employees.length} inactive employee{employees.length !== 1 ? 's' : ''} found
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Filters */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Input
+                        placeholder="Search by name, last name, or email..."
+                        value={searchQuery}
+                        onChange={(e) => {
+                          setSearchQuery(e.target.value);
+                          setCurrentPage(1);
+                        }}
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+
+                  <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Departments</SelectItem>
+                      {departments.map(dept => (
+                        <SelectItem key={dept.id} value={dept.name}>{dept.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Table */}
+                {employees.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Email</TableHead>
+                            <TableHead>Department</TableHead>
+                            <TableHead>Designation</TableHead>
+                            <TableHead>Role</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {employees.map((employee) => (
+                            <TableRow key={employee.uid}>
+                              <TableCell className="font-medium">{getFullName(employee.name, employee.lastName)}</TableCell>
+                              <TableCell>{employee.email}</TableCell>
+                              <TableCell>{employee.department || '-'}</TableCell>
+                              <TableCell>{employee.designation || '-'}</TableCell>
+                              <TableCell>
+                                <Badge className={getRoleBadge(employee.role)}>
+                                  {employee.role}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge className={getStatusBadge(employee.status)}>
+                                  {employee.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  {isDirector && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        setViewingEmployee(employee);
+                                        setShowViewDialog(true);
+                                      }}
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  {isDirector && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => openEditDialog(employee)}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  {isDirector && employee.uid !== userData?.uid && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => setActivatingEmployee(employee)}
+                                      className="text-green-600"
+                                    >
+                                      <RotateCcw className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Pagination */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between border-t pt-4">
+                        <div className="text-sm text-gray-600">
+                          <p>Page {currentPage} of {totalPages}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(1)}
+                            disabled={currentPage === 1}
+                          >
+                            First
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                            Previous
+                          </Button>
+
+                          {/* Page Numbers */}
+                          <div className="flex gap-1">
+                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                              let pageNum;
+                              if (totalPages <= 5) {
+                                pageNum = i + 1;
+                              } else if (currentPage <= 3) {
+                                pageNum = i + 1;
+                              } else if (currentPage >= totalPages - 2) {
+                                pageNum = totalPages - 4 + i;
+                              } else {
+                                pageNum = currentPage - 2 + i;
+                              }
+
+                              return (
+                                <Button
+                                  key={pageNum}
+                                  variant={currentPage === pageNum ? "default" : "outline"}
+                                  size="sm"
+                                  onClick={() => setCurrentPage(pageNum)}
+                                  className="w-8"
+                                >
+                                  {pageNum}
+                                </Button>
+                              );
+                            })}
+                          </div>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            disabled={currentPage === totalPages}
+                          >
+                            Next
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(totalPages)}
+                            disabled={currentPage === totalPages}
+                          >
+                            Last
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                      <Users className="h-8 w-8 text-gray-400" />
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900">No inactive employees found</h3>
+                    <p className="text-gray-600 mt-1">All employees are currently active.</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
 
         {/* Reportees Tab */}
         {canViewReportees && (
