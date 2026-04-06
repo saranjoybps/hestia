@@ -17,46 +17,47 @@ class StatusUpdate(BaseModel):
 VIEW_ALL_ROLES = {"hr", "director", "super_admin", "manager"}
 
 
-def _get_direct_reportee_ids(manager_uid: str) -> Set[str]:
+def _build_user_map() -> dict:
+    """Load all users in a single Firestore read. Returns {uid: user_data}."""
+    return {doc.id: doc.to_dict() for doc in db.collection("users").stream()}
+
+
+def _get_direct_reportee_ids(manager_uid: str, user_map: dict) -> Set[str]:
+    """Return IDs of direct reports (pure in-memory, no DB calls)."""
     ids: Set[str] = set()
-    queries = [
-        db.collection("users").where(filter=FieldFilter("manager_id", "==", manager_uid)),
-        db.collection("users").where(filter=FieldFilter("managerId", "==", manager_uid)),
-        # Legacy fallback
-        db.collection("users").where(filter=FieldFilter("lead_id", "==", manager_uid)),
-        db.collection("users").where(filter=FieldFilter("leadId", "==", manager_uid)),
-    ]
-    for query in queries:
-        for doc in query.stream():
-            ids.add(doc.id)
+    for uid, data in user_map.items():
+        if (data.get("manager_id") == manager_uid or
+                data.get("managerId") == manager_uid or
+                data.get("lead_id") == manager_uid or
+                data.get("leadId") == manager_uid):
+            ids.add(uid)
     return ids
 
 
-def _is_descendant(manager_uid: str, target_uid: str, max_depth: int = 8) -> bool:
-    if not manager_uid or not target_uid or manager_uid == target_uid:
-        return False
-
-    visited: Set[str] = {manager_uid}
-    frontier: Set[str] = {manager_uid}
+def _get_all_descendant_ids(root_uid: str, user_map: dict, max_depth: int = 8) -> Set[str]:
+    """Return all descendant UIDs via BFS (pure in-memory, no DB calls)."""
+    visited: Set[str] = set()
+    frontier: Set[str] = {root_uid}
     depth = 0
-
     while frontier and depth < max_depth:
         next_frontier: Set[str] = set()
         for uid in frontier:
-            reportees = _get_direct_reportee_ids(uid)
-            if target_uid in reportees:
-                return True
-            for rid in reportees:
-                if rid not in visited:
-                    visited.add(rid)
-                    next_frontier.add(rid)
+            for child_uid in _get_direct_reportee_ids(uid, user_map):
+                if child_uid not in visited:
+                    visited.add(child_uid)
+                    next_frontier.add(child_uid)
         frontier = next_frontier
         depth += 1
+    return visited
 
-    return False
+
+def _is_descendant(manager_uid: str, target_uid: str, user_map: dict, max_depth: int = 8) -> bool:
+    if not manager_uid or not target_uid or manager_uid == target_uid:
+        return False
+    return target_uid in _get_all_descendant_ids(manager_uid, user_map, max_depth)
 
 
-def _can_view_task(current_user: Dict[str, Any], task_data: Dict[str, Any]) -> bool:
+def _can_view_task(current_user: Dict[str, Any], task_data: Dict[str, Any], user_map: dict) -> bool:
     role = current_user.get("role")
     uid = current_user.get("uid")
     assignee_id = task_data.get("assigneeId")
@@ -65,12 +66,12 @@ def _can_view_task(current_user: Dict[str, Any], task_data: Dict[str, Any]) -> b
         return True
     if assignee_id == uid:
         return True
-    if role == "lead" and _is_descendant(uid, assignee_id):
+    if role == "lead" and _is_descendant(uid, assignee_id, user_map):
         return True
     return False
 
 
-def _can_modify_task(current_user: Dict[str, Any], task_data: Dict[str, Any]) -> bool:
+def _can_modify_task(current_user: Dict[str, Any], task_data: Dict[str, Any], user_map: dict) -> bool:
     role = current_user.get("role")
     uid = current_user.get("uid")
     assignee_id = task_data.get("assigneeId")
@@ -79,7 +80,7 @@ def _can_modify_task(current_user: Dict[str, Any], task_data: Dict[str, Any]) ->
         return True
     if role == "lead":
         # Leads can work on their own assigned tasks and their reportee tasks.
-        return assignee_id == uid or _is_descendant(uid, assignee_id)
+        return assignee_id == uid or _is_descendant(uid, assignee_id, user_map)
     # Employees can only modify their own assigned tasks.
     return assignee_id == uid
 
@@ -110,7 +111,8 @@ async def create_task(
         assignee_role = assignee_data.get("role")
 
         if creator_role == "lead":
-            if assignee_role != "employee" or not _is_descendant(creator_uid, task_data.assigneeId):
+            user_map = _build_user_map()
+            if assignee_role != "employee" or not _is_descendant(creator_uid, task_data.assigneeId, user_map):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Leads can create tasks only for their reporting employees"
@@ -184,11 +186,12 @@ async def list_tasks(
                 task_data["id"] = doc.id
                 tasks.append(task_data)
         elif user_role == "lead":
-            query = db.collection("tasks")
-            for doc in query.stream():
+            user_map = _build_user_map()
+            visible_ids = _get_all_descendant_ids(uid, user_map) | {uid}
+            for doc in db.collection("tasks").stream():
                 task_data = doc.to_dict()
                 task_data["id"] = doc.id
-                if _can_view_task(current_user, task_data):
+                if task_data.get("assigneeId") in visible_ids:
                     tasks.append(task_data)
         else:
             query = db.collection("tasks").where("assigneeId", "==", uid)
@@ -227,7 +230,8 @@ async def get_task(
         
         task_data = task_doc.to_dict()
         task_data["id"] = task_id
-        if not _can_view_task(current_user, task_data):
+        user_map = _build_user_map() if current_user.get("role") == "lead" else {}
+        if not _can_view_task(current_user, task_data, user_map):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not allowed to view this task"
@@ -261,7 +265,8 @@ async def update_task(
             )
         existing_task = task_doc.to_dict()
         existing_task["id"] = task_id
-        if not _can_modify_task(current_user, existing_task):
+        user_map = _build_user_map() if current_user.get("role") == "lead" else {}
+        if not _can_modify_task(current_user, existing_task, user_map):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not allowed to update this task"
@@ -269,12 +274,12 @@ async def update_task(
 
         update_data = task_update.model_dump(exclude_unset=True)
         update_data["updatedAt"] = datetime.utcnow().isoformat()
-        
+
         task_ref.update(update_data)
-        
-        updated_doc = task_ref.get()
-        task_data = updated_doc.to_dict()
-        task_data["id"] = task_id
+
+        # Merge locally instead of re-reading from Firestore
+        existing_task.update(update_data)
+        task_data = existing_task
 
         # Audit log - task updated
         log_audit_event(
@@ -328,7 +333,8 @@ async def update_task_status(
             )
         existing_task = task_doc.to_dict()
         existing_task["id"] = task_id
-        if not _can_modify_task(current_user, existing_task):
+        user_map = _build_user_map() if current_user.get("role") == "lead" else {}
+        if not _can_modify_task(current_user, existing_task, user_map):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not allowed to update this task"
@@ -338,10 +344,11 @@ async def update_task_status(
             "status": status_update.status,
             "updatedAt": datetime.utcnow().isoformat()
         })
-        
-        updated_doc = task_ref.get()
-        task_data = updated_doc.to_dict()
-        task_data["id"] = task_id
+
+        # Merge locally instead of re-reading from Firestore
+        existing_task["status"] = status_update.status
+        existing_task["updatedAt"] = datetime.utcnow().isoformat()
+        task_data = existing_task
 
         # Audit log - task status updated
         log_audit_event(
@@ -393,7 +400,8 @@ async def delete_task(
 
         existing_task = task_doc.to_dict()
         existing_task["id"] = task_id
-        if not _can_modify_task(current_user, existing_task):
+        user_map = _build_user_map() if current_user.get("role") == "lead" else {}
+        if not _can_modify_task(current_user, existing_task, user_map):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not allowed to delete this task"

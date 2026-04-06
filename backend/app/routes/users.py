@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from firebase_admin import auth as firebase_auth
-from app.dependencies import db, get_current_user, require_role
+from app.dependencies import db, get_current_user, require_role, invalidate_user_cache
 from app.services.audit_log import log_audit_event
 from app.services.zoho_smtp import send_onboarding_email
 from app.models import UserCreate, UserUpdate, UserResponse
@@ -320,7 +320,10 @@ async def update_user(
         
         # Update Firestore
         user_ref.update(update_data)
-        
+
+        # Invalidate Redis cache so next request fetches fresh data
+        invalidate_user_cache(user_id)
+
         print(f"✅ User updated successfully in Firestore")
         
         # Create audit log

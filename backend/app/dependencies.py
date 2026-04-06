@@ -7,6 +7,54 @@ import json
 import os
 from app.config import get_settings
 
+# Optional Upstash Redis for serverless caching (Vercel)
+# Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in Vercel env vars to enable.
+try:
+    from upstash_redis import Redis as UpstashRedis
+    _redis = UpstashRedis.from_env() if os.getenv('UPSTASH_REDIS_REST_URL') else None
+except ImportError:
+    _redis = None
+
+USER_CACHE_TTL = 300  # seconds (5 minutes)
+
+
+def invalidate_user_cache(uid: str) -> None:
+    """Remove a user's cached document from Redis. No-op if Redis is not configured."""
+    if _redis:
+        try:
+            _redis.delete(f"user:{uid}")
+        except Exception:
+            pass
+
+
+def get_user_cached(uid: str) -> Optional[dict]:
+    """
+    Fetch any user document by UID with Redis caching.
+    Returns None if the user does not exist.
+    """
+    if _redis:
+        try:
+            cached = _redis.get(f"user:{uid}")
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
+    user_doc = db.collection("users").document(uid).get()
+    if not user_doc.exists:
+        return None
+
+    user_data = user_doc.to_dict()
+    user_data["uid"] = uid
+
+    if _redis:
+        try:
+            _redis.setex(f"user:{uid}", USER_CACHE_TTL, json.dumps(user_data, default=str))
+        except Exception:
+            pass
+
+    return user_data
+
 settings = get_settings()
 
 # Initialize Firebase Admin SDK
@@ -47,20 +95,38 @@ class FirebaseAuth:
     
     @staticmethod
     async def get_current_user(token_data: dict = Depends(verify_token)) -> dict:
-        """Get current user from Firestore"""
+        """Get current user from Firestore, with Redis cache when available."""
         try:
             uid = token_data.get("uid")
+
+            # Try Redis cache first to avoid a Firestore read on every request
+            if _redis:
+                try:
+                    cached = _redis.get(f"user:{uid}")
+                    if cached:
+                        return json.loads(cached)
+                except Exception:
+                    pass
+
             user_ref = db.collection("users").document(uid)
             user_doc = user_ref.get()
-            
+
             if not user_doc.exists:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User not found"
                 )
-            
+
             user_data = user_doc.to_dict()
             user_data["uid"] = uid
+
+            # Persist to Redis for subsequent requests within the TTL window
+            if _redis:
+                try:
+                    _redis.setex(f"user:{uid}", USER_CACHE_TTL, json.dumps(user_data, default=str))
+                except Exception:
+                    pass
+
             return user_data
         except HTTPException:
             raise
