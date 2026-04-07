@@ -570,6 +570,177 @@ async def reject_shift(
         raise HTTPException(status_code=500, detail=f"Failed to reject shift: {str(e)}")
 
 
+@router.patch("/shifts/bulk-approve", response_model=dict)
+async def bulk_approve_shifts(
+    payload: dict,
+    current_user: dict = Depends(require_role("manager", "director", "super_admin"))
+):
+    """
+    Bulk approve pending shifts.
+    Approval rules are the same as single approval.
+    """
+    try:
+        shift_ids = payload.get("shift_ids") or []
+        if not isinstance(shift_ids, list) or len(shift_ids) == 0:
+            raise HTTPException(status_code=400, detail="shift_ids is required")
+
+        role_cache: Dict[str, Optional[str]] = {}
+        approved: list[str] = []
+        failed: list[dict] = []
+
+        for shift_id in shift_ids:
+            try:
+                shift_ref = db.collection("shifts").document(shift_id)
+                shift_doc = shift_ref.get()
+                if not shift_doc.exists:
+                    failed.append({"id": shift_id, "reason": "Shift not found"})
+                    continue
+
+                shift_data = shift_doc.to_dict()
+                if shift_data.get("status") != "pending":
+                    failed.append({"id": shift_id, "reason": f"Cannot approve shift with status: {shift_data.get('status')}"})
+                    continue
+
+                if not _can_current_user_approve_shift(current_user, shift_data, role_cache):
+                    failed.append({"id": shift_id, "reason": "You are not allowed to approve this shift"})
+                    continue
+
+                update_data = {
+                    "status": "approved",
+                    "approved_by": current_user["uid"],
+                    "approved_by_name": current_user.get("name"),
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+                shift_ref.update(update_data)
+
+                # Audit log - shift approved
+                log_audit_event(
+                    actor_id=current_user.get("uid"),
+                    actor_name=current_user.get("name"),
+                    actor_email=current_user.get("email"),
+                    module="shift_management",
+                    action="shift_approved",
+                    description=(
+                        f"{current_user.get('name', 'Someone')} approved the shift for "
+                        f"{shift_data.get('employee_name', shift_data.get('employee_id'))} on "
+                        f"{shift_data.get('shift_date')}."
+                    ),
+                    result="success",
+                    target_type="shift",
+                    target_id=shift_id,
+                    metadata={
+                        "employee_id": shift_data.get("employee_id"),
+                        "employee_name": shift_data.get("employee_name"),
+                        "shift_type": shift_data.get("shift_type"),
+                        "shift_date": shift_data.get("shift_date"),
+                        "status": "approved"
+                    }
+                )
+
+                approved.append(shift_id)
+            except Exception as inner:
+                failed.append({"id": shift_id, "reason": str(inner)})
+
+        return {
+            "approved": approved,
+            "failed": failed,
+            "successCount": len(approved),
+            "failCount": len(failed)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to bulk approve shifts: {str(e)}")
+
+
+@router.patch("/shifts/bulk-reject", response_model=dict)
+async def bulk_reject_shifts(
+    payload: dict,
+    current_user: dict = Depends(require_role("manager", "director", "super_admin"))
+):
+    """
+    Bulk reject pending shifts with a reason.
+    Rejection rules are the same as single rejection.
+    """
+    try:
+        shift_ids = payload.get("shift_ids") or []
+        rejection_reason = payload.get("rejection_reason")
+        if not isinstance(shift_ids, list) or len(shift_ids) == 0:
+            raise HTTPException(status_code=400, detail="shift_ids is required")
+        if not rejection_reason or not str(rejection_reason).strip():
+            raise HTTPException(status_code=400, detail="rejection_reason is required")
+
+        role_cache: Dict[str, Optional[str]] = {}
+        rejected: list[str] = []
+        failed: list[dict] = []
+
+        for shift_id in shift_ids:
+            try:
+                shift_ref = db.collection("shifts").document(shift_id)
+                shift_doc = shift_ref.get()
+                if not shift_doc.exists:
+                    failed.append({"id": shift_id, "reason": "Shift not found"})
+                    continue
+
+                shift_data = shift_doc.to_dict()
+                if shift_data.get("status") != "pending":
+                    failed.append({"id": shift_id, "reason": f"Cannot reject shift with status: {shift_data.get('status')}"})
+                    continue
+
+                if not _can_current_user_approve_shift(current_user, shift_data, role_cache):
+                    failed.append({"id": shift_id, "reason": "You are not allowed to reject this shift"})
+                    continue
+
+                update_data = {
+                    "status": "rejected",
+                    "approved_by": current_user["uid"],
+                    "approved_by_name": current_user.get("name"),
+                    "rejection_reason": rejection_reason,
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+                shift_ref.update(update_data)
+
+                # Audit log - shift rejected
+                log_audit_event(
+                    actor_id=current_user.get("uid"),
+                    actor_name=current_user.get("name"),
+                    actor_email=current_user.get("email"),
+                    module="shift_management",
+                    action="shift_rejected",
+                    description=(
+                        f"{current_user.get('name', 'Someone')} rejected the shift for "
+                        f"{shift_data.get('employee_name', shift_data.get('employee_id'))} on "
+                        f"{shift_data.get('shift_date')}. Reason: {rejection_reason}."
+                    ),
+                    result="success",
+                    target_type="shift",
+                    target_id=shift_id,
+                    metadata={
+                        "employee_id": shift_data.get("employee_id"),
+                        "employee_name": shift_data.get("employee_name"),
+                        "shift_type": shift_data.get("shift_type"),
+                        "shift_date": shift_data.get("shift_date"),
+                        "status": "rejected",
+                        "rejection_reason": rejection_reason
+                    }
+                )
+
+                rejected.append(shift_id)
+            except Exception as inner:
+                failed.append({"id": shift_id, "reason": str(inner)})
+
+        return {
+            "rejected": rejected,
+            "failed": failed,
+            "successCount": len(rejected),
+            "failCount": len(failed)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to bulk reject shifts: {str(e)}")
+
+
 @router.delete("/shifts/{shift_id}")
 async def delete_shift(
     shift_id: str,

@@ -102,6 +102,7 @@ export default function ShiftsPage() {
   const [myShifts, setMyShifts] = useState<Shift[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<Shift[]>([]);
   const [reportees, setReportees] = useState<Employee[]>([]);
+  const [loadingReportees, setLoadingReportees] = useState(false);
 
   // filters for all shifts
   const [filterStartDate, setFilterStartDate] = useState<string>('');
@@ -176,24 +177,25 @@ export default function ShiftsPage() {
   }, [pendingApprovals, filterPendingEmployee]);
 
   const fetchReportees = async () => {
+    if (loadingReportees) return;
     try {
+      setLoadingReportees(true);
       const token = await user?.getIdToken();
       if (!token || !userData?.uid) return;
 
-      // For managers/directors/superadmins: load everyone (minus self)
-      if (isManager || isDirector || isSuperAdmin) {
+      // For directors/superadmins: load everyone (minus self)
+      if (isDirector || isSuperAdmin) {
         const response = await fetch(`${API_BASE_URL}/users?limit=500`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
-        if (response.ok) {
-          const data = await response.json();
-          const users: Employee[] = data.users || data;
-          setReportees(users.filter((u) => u.uid !== userData.uid));
-        }
+        if (!response.ok) throw new Error('Failed to load employees');
+        const data = await response.json();
+        const users: Employee[] = data.users || data;
+        setReportees(users.filter((u) => u.uid !== userData.uid));
         return;
       }
 
-      // For leads/HR: load full downstream reporting tree only
+      // For leads/managers/HR: load full downstream reporting tree only
       const fetchReporteesFor = async (uid: string) => {
         try {
           const res = await fetch(`${API_BASE_URL}/users/${uid}/reportees`, {
@@ -228,6 +230,8 @@ export default function ShiftsPage() {
       setReportees(all);
     } catch (error) {
       console.error('Error fetching reportees:', error);
+    } finally {
+      setLoadingReportees(false);
     }
   };
 
@@ -1300,7 +1304,15 @@ export default function ShiftsPage() {
       </AlertDialog>
 
       {/* Create Shift Dialog */}
-      <Sheet open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+      <Sheet
+        open={showCreateDialog}
+        onOpenChange={(open) => {
+          setShowCreateDialog(open);
+          if (open && reportees.length === 0) {
+            fetchReportees();
+          }
+        }}
+      >
         <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
           <div className="p-6 border-b">
             <SheetHeader>
@@ -1319,6 +1331,16 @@ export default function ShiftsPage() {
                   <SelectValue placeholder="Select employee" />
                 </SelectTrigger>
                 <SelectContent>
+                  {loadingReportees && (
+                    <SelectItem value="loading" disabled>
+                      Loading employees...
+                    </SelectItem>
+                  )}
+                  {!loadingReportees && reportees.length === 0 && (
+                    <SelectItem value="empty" disabled>
+                      No employees found
+                    </SelectItem>
+                  )}
                   {reportees.map((employee) => (
                     <SelectItem key={employee.uid} value={employee.uid}>
                       {employee.name} - {employee.department}
@@ -1401,7 +1423,15 @@ export default function ShiftsPage() {
       </Sheet>
 
       {/* Bulk Allocate Shifts Dialog */}
-      <Sheet open={showBulkDialog} onOpenChange={setShowBulkDialog}>
+      <Sheet
+        open={showBulkDialog}
+        onOpenChange={(open) => {
+          setShowBulkDialog(open);
+          if (open && reportees.length === 0) {
+            fetchReportees();
+          }
+        }}
+      >
         <SheetContent className="overflow-y-auto p-0" style={{ width: '650px', maxWidth: '650px' }}>
           <div className="p-6 border-b">
             <SheetHeader>
@@ -1420,6 +1450,16 @@ export default function ShiftsPage() {
                   <SelectValue placeholder="Select employee" />
                 </SelectTrigger>
                 <SelectContent>
+                  {loadingReportees && (
+                    <SelectItem value="loading" disabled>
+                      Loading employees...
+                    </SelectItem>
+                  )}
+                  {!loadingReportees && reportees.length === 0 && (
+                    <SelectItem value="empty" disabled>
+                      No employees found
+                    </SelectItem>
+                  )}
                   {reportees.map((employee) => (
                     <SelectItem key={employee.uid} value={employee.uid}>
                       {employee.name} - {employee.department}
