@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
-from app.dependencies import db, get_current_user, require_role
+from app.dependencies import db, get_current_user, require_role, get_user_cached
 from app.models import LeaveCreate, LeaveUpdate, LeaveResponse
 from app.services.audit_log import log_audit_event
 from app.services.zoho_smtp import send_email_smtp
@@ -80,9 +80,8 @@ async def create_leave_request(
             manager_email = None
             manager_name = None
             if manager_id:
-                manager_doc = db.collection("users").document(manager_id).get()
-                if manager_doc.exists:
-                    manager_data = manager_doc.to_dict()
+                manager_data = get_user_cached(manager_id)
+                if manager_data:
                     manager_email = manager_data.get("email")
                     manager_name = manager_data.get("name")
 
@@ -247,25 +246,25 @@ async def get_pending_approvals(
                 yield ids_list[i:i+10]
 
         if user_role == "manager":
-            # Support both snake_case and camelCase fields in user documents
-            reportees_query = db.collection("users").where(filter=FieldFilter("manager_id", "==", uid))
-            reportees_query_alt = db.collection("users").where(filter=FieldFilter("managerId", "==", uid))
-            leadees_query = db.collection("users").where(filter=FieldFilter("lead_id", "==", uid))
-            leadees_query_alt = db.collection("users").where(filter=FieldFilter("leadId", "==", uid))
-            ids = {doc.id for doc in reportees_query.stream()}
-            ids.update({doc.id for doc in reportees_query_alt.stream()})
-            ids.update({doc.id for doc in leadees_query.stream()})
-            ids.update({doc.id for doc in leadees_query_alt.stream()})
+            # Load all users once (1 read) instead of 4 separate Firestore queries
+            all_users = {doc.id: doc.to_dict() for doc in db.collection("users").stream()}
+            ids = {
+                user_id for user_id, data in all_users.items()
+                if (data.get("manager_id") == uid or
+                    data.get("managerId") == uid or
+                    data.get("lead_id") == uid or
+                    data.get("leadId") == uid)
+            }
         else:  # lead
-            # Leads can also be stored as manager_id in some orgs; include both
-            reportees_query = db.collection("users").where(filter=FieldFilter("lead_id", "==", uid))
-            reportees_query_alt = db.collection("users").where(filter=FieldFilter("leadId", "==", uid))
-            as_manager_query = db.collection("users").where(filter=FieldFilter("manager_id", "==", uid))
-            as_manager_query_alt = db.collection("users").where(filter=FieldFilter("managerId", "==", uid))
-            ids = {doc.id for doc in reportees_query.stream()}
-            ids.update({doc.id for doc in reportees_query_alt.stream()})
-            ids.update({doc.id for doc in as_manager_query.stream()})
-            ids.update({doc.id for doc in as_manager_query_alt.stream()})
+            # Load all users once (1 read) instead of 4 separate Firestore queries
+            all_users = {doc.id: doc.to_dict() for doc in db.collection("users").stream()}
+            ids = {
+                user_id for user_id, data in all_users.items()
+                if (data.get("manager_id") == uid or
+                    data.get("managerId") == uid or
+                    data.get("lead_id") == uid or
+                    data.get("leadId") == uid)
+            }
 
         if not ids:
             return []

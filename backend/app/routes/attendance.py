@@ -20,19 +20,21 @@ async def create_attendance(
     """
     try:
         user_role = current_user.get("role")
-        
+
+        # Fetch employee document once — reused for permission check and audit log
+        employee_doc = db.collection("users").document(attendance_data.user_id).get()
+        employee_name = employee_doc.to_dict().get("name") if employee_doc.exists else attendance_data.user_id
+
         # Check permissions
         if user_role == "lead":
             # Single reporting flow: manager_id is source of truth.
             # Keep legacy lead fields as read fallback for older records.
-            user_ref = db.collection("users").document(attendance_data.user_id)
-            user_doc = user_ref.get()
-            if not user_doc.exists:
+            if not employee_doc.exists:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="You can only mark attendance for your reportees"
                 )
-            reportee = user_doc.to_dict()
+            reportee = employee_doc.to_dict()
             manager_id = reportee.get("manager_id") or reportee.get("managerId")
             legacy_lead_id = reportee.get("lead_id") or reportee.get("leadId")
             if manager_id != current_user.get("uid") and legacy_lead_id != current_user.get("uid"):
@@ -45,17 +47,12 @@ async def create_attendance(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions"
             )
-        
+
         # Prepare attendance document
         attendance_doc = attendance_data.model_dump()
         attendance_doc["created_at"] = datetime.utcnow()
         attendance_doc["updated_at"] = None
         attendance_doc["corrected_by"] = None
-
-        # Fetch employee details for clearer audit logs
-        employee_ref = db.collection("users").document(attendance_data.user_id)
-        employee_doc = employee_ref.get()
-        employee_name = employee_doc.to_dict().get("name") if employee_doc.exists else attendance_data.user_id
         
         # Save to Firestore
         doc_ref = db.collection("attendance").add(attendance_doc)

@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     zoho_email: str | None = None
     zoho_password: str | None = None
 
+    # Upstash Redis (required)
+    upstash_redis_rest_url: str
+    upstash_redis_rest_token: str
+
     
     class Config:
         env_file = ".env"

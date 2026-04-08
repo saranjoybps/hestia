@@ -25,8 +25,11 @@ async def get_attendance_report(
             .where('date', '>=', startDate)\
             .where('date', '<=', endDate)
         
-        docs = query.stream()
-        
+        docs = list(query.stream())
+
+        # Load all users once to avoid N+1 Firestore reads
+        all_users = {u.id: u.to_dict() for u in db.collection('users').stream()}
+
         # Aggregate by department
         dept_stats = defaultdict(lambda: {
             'totalEmployees': set(),
@@ -41,13 +44,12 @@ async def get_attendance_report(
         for doc in docs:
             data = doc.to_dict()
             user_id = data.get('user_id')
-            
-            # Get user's department
-            user_doc = db.collection('users').document(user_id).get()
-            if not user_doc.exists:
+
+            # Get user's department from pre-loaded map
+            user_data = all_users.get(user_id)
+            if not user_data:
                 continue
-                
-            user_data = user_doc.to_dict()
+
             dept = user_data.get('department', 'Unknown')
             
             # Filter by department if specified
@@ -126,8 +128,11 @@ async def get_leave_report(
             .where('startDate', '>=', startDate)\
             .where('startDate', '<=', endDate)
         
-        docs = query.stream()
-        
+        docs = list(query.stream())
+
+        # Load all users once to avoid N+1 Firestore reads
+        all_users = {u.id: u.to_dict() for u in db.collection('users').stream()}
+
         # Aggregate by department
         dept_stats = defaultdict(lambda: {
             'totalLeaves': 0,
@@ -139,19 +144,18 @@ async def get_leave_report(
             'earnedLeaves': 0,
             'totalDuration': 0,
         })
-        
+
         total_leaves = 0
-        
+
         for doc in docs:
             data = doc.to_dict()
             user_id = data.get('userId')
-            
-            # Get user's department
-            user_doc = db.collection('users').document(user_id).get()
-            if not user_doc.exists:
+
+            # Get user's department from pre-loaded map
+            user_data = all_users.get(user_id)
+            if not user_data:
                 continue
-                
-            user_data = user_doc.to_dict()
+
             dept = user_data.get('department', 'Unknown')
             
             # Filter by department if specified

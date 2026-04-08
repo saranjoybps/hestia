@@ -1,3 +1,4 @@
+import threading
 from datetime import datetime
 from typing import Optional, Any
 from app.dependencies import db
@@ -16,7 +17,9 @@ def log_audit_event(
     target_id: Optional[str] = None,
     metadata: Optional[dict[str, Any]] = None
 ) -> tuple[str, dict[str, Any]]:
-    """Create an audit log entry and return (id, document)."""
+    """Create an audit log entry asynchronously (fire-and-forget) to avoid blocking the response."""
+    # Generate the document reference locally — no API call yet
+    doc_ref = db.collection("audit_logs").document()
     audit_doc: dict[str, Any] = {
         "actor_id": actor_id,
         "actor_name": actor_name,
@@ -31,6 +34,12 @@ def log_audit_event(
         "created_at": datetime.utcnow().isoformat()
     }
 
-    doc_ref = db.collection("audit_logs").document()
-    doc_ref.set(audit_doc)
+    # Write in a background thread so the API response is not blocked
+    def _write():
+        try:
+            doc_ref.set(audit_doc)
+        except Exception:
+            pass  # Audit log failures must never affect the main response
+
+    threading.Thread(target=_write, daemon=True).start()
     return doc_ref.id, audit_doc
