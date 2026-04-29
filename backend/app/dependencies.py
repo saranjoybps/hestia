@@ -7,6 +7,9 @@ import json
 import os
 from app.config import get_settings
 
+# Supabase client
+from supabase import create_client, Client
+
 # Optional Upstash Redis for serverless caching (Vercel)
 # Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in Vercel env vars to enable.
 try:
@@ -71,6 +74,12 @@ firebase_admin.initialize_app(cred)
 
 # Firestore client
 db = firestore.client()
+
+# Initialize Supabase client
+supabase: Client = create_client(
+    settings.supabase_url,
+    settings.supabase_service_role_key
+)
 
 # Security
 security = HTTPBearer()
@@ -138,9 +147,56 @@ class FirebaseAuth:
 
 
 # Dependency functions
+async def provision_supabase_user(token_data: dict, firebase_user_data: dict = None) -> dict:
+    """
+    Ensure user exists in Supabase (provision on first login)
+    """
+    try:
+        firebase_uid = token_data.get("uid")
+        email = token_data.get("email")
+        
+        # Check if user exists in Supabase
+        response = supabase.table("users").select("*").eq(
+            "firebase_uid", firebase_uid
+        ).execute()
+        
+        if response.data and len(response.data) > 0:
+            # User exists, return data
+            user_data = response.data[0]
+            user_data["uid"] = firebase_uid
+            return user_data
+        
+        # User doesn't exist, create new record (first login)
+        name = token_data.get("name", email.split("@")[0] if email else "User")
+        new_user = {
+            "firebase_uid": firebase_uid,
+            "email": email,
+            "name": name,
+            "role": "employee",  # Default role
+            "status": "active"
+        }
+        
+        insert_response = supabase.table("users").insert(new_user).execute()
+        
+        if insert_response.data and len(insert_response.data) > 0:
+            user_data = insert_response.data[0]
+            user_data["uid"] = firebase_uid
+            return user_data
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to provision user in Supabase"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"User provisioning error: {str(e)}"
+        )
+
+
 async def get_current_user(token_data: dict = Depends(FirebaseAuth.verify_token)) -> dict:
-    """Get current authenticated user"""
-    return await FirebaseAuth.get_current_user(token_data)
+    """Get current authenticated user with Supabase provisioning"""
+    return await provision_supabase_user(token_data)
 
 
 def require_role(*allowed_roles: str):
@@ -187,6 +243,7 @@ def require_permission(*required_permissions: str):
 __all__ = [
     "db",
     "auth",
+    "supabase",
     "get_current_user",
     "require_role",
     "require_permission",

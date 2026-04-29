@@ -651,15 +651,16 @@ export default function EmployeesPage() {
   const openEditDialog = (employee: Employee) => {
     setEditingEmployee(employee);
     setFormData({
-      email: employee.email,
-      name: employee.name,
+      email: employee.email || '',
+      name: employee.name || '',
       lastName: employee.lastName || '',
       role: employee.role,
-      department: employee.department,
-      designation: employee.designation,
+      department: employee.department || '',
+      designation: employee.designation || '',
       phone: employee.phone || '',
-      dateOfJoining: normalizeDateInput(employee.dateOfJoining),
+      dateOfJoining: normalizeDateInput(employee.dateOfJoining) || '',
       managerId: employee.managerId || '',
+      password: '',
     });
     setShowEditDialog(true);
   };
@@ -1534,7 +1535,7 @@ export default function EmployeesPage() {
                 <Label htmlFor="create-name">First Name *</Label>
                 <Input
                   id="create-name"
-                  value={formData.name}
+                  value={formData.name ?? ''}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="John"
                 />
@@ -1544,7 +1545,7 @@ export default function EmployeesPage() {
                 <Label htmlFor="create-last-name">Last Name</Label>
                 <Input
                   id="create-last-name"
-                  value={formData.lastName}
+                  value={formData.lastName ?? ''}
                   onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                   placeholder="Doe"
                 />
@@ -1555,7 +1556,7 @@ export default function EmployeesPage() {
                 <Input
                   id="create-email"
                   type="email"
-                  value={formData.email}
+                  value={formData.email ?? ''}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="john@company.com"
                 />
@@ -1566,7 +1567,7 @@ export default function EmployeesPage() {
                 <Input
                   id="create-password"
                   type="password"
-                  value={formData.password}
+                  value={formData.password ?? ''}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   placeholder="Min. 6 characters"
                 />
@@ -1577,7 +1578,7 @@ export default function EmployeesPage() {
                 <Input
                   id="create-phone"
                   type="tel"
-                  value={formData.phone}
+                  value={formData.phone ?? ''}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="+1234567890"
                 />
@@ -1617,7 +1618,7 @@ export default function EmployeesPage() {
                 <Label htmlFor="create-designation">Designation *</Label>
                 <Input
                   id="create-designation"
-                  value={formData.designation}
+                  value={formData.designation ?? ''}
                   onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
                   placeholder="Software Engineer"
                 />
@@ -1628,7 +1629,7 @@ export default function EmployeesPage() {
                 <Input
                   id="create-joining-date"
                   type="date"
-                  value={formData.dateOfJoining}
+                  value={formData.dateOfJoining ?? ''}
                   onChange={(e) => setFormData({ ...formData, dateOfJoining: e.target.value })}
                 />
               </div>
@@ -1698,7 +1699,7 @@ export default function EmployeesPage() {
                   <Input
                     id="edit-email"
                     type="email"
-                    value={formData.email}
+                    value={formData.email ?? ''}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     disabled={loading}
                   />
@@ -1710,7 +1711,7 @@ export default function EmployeesPage() {
                       <Label htmlFor="edit-name">First Name *</Label>
                       <Input
                         id="edit-name"
-                        value={formData.name}
+                        value={formData.name ?? ''}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         disabled={loading}
                       />
@@ -1720,7 +1721,7 @@ export default function EmployeesPage() {
                       <Label htmlFor="edit-last-name">Last Name</Label>
                       <Input
                         id="edit-last-name"
-                        value={formData.lastName}
+                        value={formData.lastName ?? ''}
                         onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                         disabled={loading}
                       />
@@ -1731,7 +1732,7 @@ export default function EmployeesPage() {
                       <Input
                         id="edit-phone"
                         type="tel"
-                        value={formData.phone}
+                        value={formData.phone ?? ''}
                         onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                         disabled={loading}
                       />
@@ -1775,7 +1776,7 @@ export default function EmployeesPage() {
                       <Label htmlFor="edit-designation">Designation</Label>
                       <Input
                         id="edit-designation"
-                        value={formData.designation}
+                        value={formData.designation ?? ''}
                         onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
                       />
                     </div>
@@ -1807,7 +1808,7 @@ export default function EmployeesPage() {
                       <Input
                         id="edit-joining-date"
                         type="date"
-                        value={formData.dateOfJoining}
+                        value={formData.dateOfJoining ?? ''}
                         onChange={(e) => setFormData({ ...formData, dateOfJoining: e.target.value })}
                       />
                     </div>
