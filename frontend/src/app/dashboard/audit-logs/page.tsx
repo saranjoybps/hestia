@@ -19,6 +19,7 @@ import {
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { AlertCircle, ClipboardList, RefreshCw } from 'lucide-react';
+import { LoadingState } from '@/components/common/LoadingState';
 
 interface AuditLog {
   id: string;
@@ -190,7 +191,9 @@ export default function AuditLogsPage() {
           <CardDescription>Latest audit entries</CardDescription>
         </CardHeader>
         <CardContent>
-          {paginatedLogs.length > 0 ? (
+          {loading && logs.length === 0 ? (
+            <LoadingState label="Loading audit logs" />
+          ) : paginatedLogs.length > 0 ? (
             <div className="border rounded-lg overflow-hidden">
               <Table>
                 <TableHeader>

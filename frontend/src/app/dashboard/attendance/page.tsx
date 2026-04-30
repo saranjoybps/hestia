@@ -37,6 +37,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { LoadingState } from '@/components/common/LoadingState';
 import {
   Clock,
   Calendar as CalendarIcon,
@@ -193,6 +194,7 @@ export default function AttendancePage() {
 
       const allMembers: TeamMember[] = [];
       const visited = new Set<string>();
+      const seenMembers = new Set<string>([userData.uid]);
       const queue: string[] = [userData.uid];
 
       while (queue.length > 0) {
@@ -202,10 +204,12 @@ export default function AttendancePage() {
 
         const reportees: TeamMember[] = await fetchReportees(current, token);
         reportees.forEach((member) => {
-          if (!visited.has(member.uid)) {
-            allMembers.push(member);
-            queue.push(member.uid);
+          if (!member.uid || seenMembers.has(member.uid)) {
+            return;
           }
+          seenMembers.add(member.uid);
+          allMembers.push(member);
+          queue.push(member.uid);
         });
       }
 
@@ -216,6 +220,7 @@ export default function AttendancePage() {
   };
 
   const fetchAttendanceRecords = async () => {
+    setLoading(true);
     try {
       const token = await user?.getIdToken();
       const userId = selectedEmployee === 'me' ? userData?.uid : selectedEmployee;
@@ -245,6 +250,8 @@ export default function AttendancePage() {
       }
     } catch (error) {
       console.error('Error fetching attendance:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -719,7 +726,9 @@ export default function AttendancePage() {
               <CardDescription>View your attendance history</CardDescription>
             </CardHeader>
             <CardContent>
-              {attendanceRecords.length > 0 ? (
+              {loading && attendanceRecords.length === 0 ? (
+                <LoadingState label="Loading attendance records" />
+              ) : attendanceRecords.length > 0 ? (
                 <div className="space-y-4">
                   <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
                     <div className="flex-1">

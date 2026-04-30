@@ -384,6 +384,7 @@ class ShiftUpdate(BaseModel):
 class ShiftResponse(ShiftBase):
     """Shift response model"""
     id: str
+    name: Optional[str] = None
     status: Literal["pending", "approved", "rejected"]
     created_by: str
     created_by_name: Optional[str] = None

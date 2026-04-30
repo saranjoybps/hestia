@@ -53,6 +53,7 @@ import {
   RefreshCw,
   Trash2,
 } from 'lucide-react';
+import { LoadingState } from '@/components/common/LoadingState';
 
 interface User {
   uid: string;
@@ -556,7 +557,9 @@ export default function OrganizationPage() {
               <CardDescription>Manage user roles and reporting structure</CardDescription>
             </CardHeader>
             <CardContent>
-              {users.length > 0 ? (
+              {loading && users.length === 0 ? (
+                <LoadingState label="Loading users" />
+              ) : users.length > 0 ? (
                 <div className="border rounded-lg overflow-hidden">
                   <Table>
                     <TableHeader>
@@ -656,7 +659,9 @@ export default function OrganizationPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {departments.length > 0 ? (
+              {loading && departments.length === 0 ? (
+                <LoadingState label="Loading departments" />
+              ) : departments.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {departments.map((dept) => (
                     <Card key={dept.id} className="hover:shadow-lg transition-shadow">

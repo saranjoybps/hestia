@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
 from app.dependencies import get_current_user, require_role, supabase
@@ -63,7 +64,7 @@ async def create_announcement(
             "updated_at": None,
         }
 
-        response = supabase.table("announcements").insert(announcement_row).execute()
+        response = supabase.table("announcements").insert(jsonable_encoder(announcement_row)).execute()
         inserted = response.data[0] if response.data else None
         if not inserted:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create announcement")
@@ -86,7 +87,9 @@ async def create_announcement(
                 "is_pinned": announcement_doc.get("isPinned"),
             },
         )
-        return announcement_doc
+        return jsonable_encoder(announcement_doc)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error creating announcement: {str(e)}")
 
@@ -190,7 +193,7 @@ async def update_announcement(
         if "isPinned" in update_data:
             db_update["is_pinned"] = update_data["isPinned"]
 
-        response = supabase.table("announcements").update(db_update).eq("id", announcement_id).execute()
+        response = supabase.table("announcements").update(jsonable_encoder(db_update)).eq("id", announcement_id).execute()
         updated = response.data[0] if response.data else None
         if not updated:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update announcement")
@@ -214,7 +217,7 @@ async def update_announcement(
                 "is_pinned": announcement_public.get("isPinned"),
             },
         )
-        return announcement_public
+        return jsonable_encoder(announcement_public)
     except HTTPException:
         raise
     except Exception as e:
@@ -232,10 +235,10 @@ async def toggle_pin_announcement(
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Announcement not found")
 
-        update_resp = supabase.table("announcements").update({
+        update_resp = supabase.table("announcements").update(jsonable_encoder({
             "is_pinned": pin_data.isPinned,
             "updated_at": datetime.utcnow().isoformat(),
-        }).eq("id", announcement_id).execute()
+        })).eq("id", announcement_id).execute()
         updated = update_resp.data[0] if update_resp.data else None
         if not updated:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update pin status")
@@ -256,7 +259,7 @@ async def toggle_pin_announcement(
             target_id=announcement_id,
             metadata={"is_pinned": announcement_data.get("isPinned")},
         )
-        return announcement_data
+        return jsonable_encoder(announcement_data)
     except HTTPException:
         raise
     except Exception as e:

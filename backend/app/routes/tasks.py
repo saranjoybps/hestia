@@ -19,20 +19,29 @@ class StatusUpdate(BaseModel):
 VIEW_ALL_ROLES = {"hr", "director", "super_admin", "manager"}
 
 
-def _get_descendants(root_uid: str, user_map: Dict[str, Dict[str, Any]], max_depth: int = 8) -> Set[str]:
+def _normalize_due_date(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _get_descendants(root_identifiers: Set[str], user_map: Dict[str, Dict[str, Any]], max_depth: int = 8) -> Set[str]:
     visited: Set[str] = set()
-    frontier: Set[str] = {root_uid}
+    frontier: Set[str] = {identifier for identifier in root_identifiers if identifier}
     depth = 0
 
     while frontier and depth < max_depth:
         next_frontier: Set[str] = set()
-        for uid in frontier:
-            for other_uid, data in user_map.items():
-                if other_uid in visited or other_uid == root_uid:
-                    continue
-                if data.get("manager_id") == uid or data.get("lead_id") == uid:
-                    visited.add(other_uid)
-                    next_frontier.add(other_uid)
+        for other_uid, data in user_map.items():
+            other_public_uid = str(data.get("uid") or "")
+            if other_uid in visited or other_public_uid in visited:
+                continue
+            manager_id = str(data.get("manager_id") or "")
+            lead_id = str(data.get("lead_id") or "")
+            if manager_id in frontier or lead_id in frontier:
+                visited.update({other_uid, other_public_uid})
+                next_frontier.update({other_uid, other_public_uid})
         frontier = next_frontier
         depth += 1
 
@@ -41,28 +50,34 @@ def _get_descendants(root_uid: str, user_map: Dict[str, Dict[str, Any]], max_dep
 
 def _can_view_task(current_user: Dict[str, Any], task_data: Dict[str, Any], user_map: Dict[str, Dict[str, Any]]) -> bool:
     role = current_user.get("role")
-    uid = current_user.get("uid")
+    current_identifiers = {
+        str(current_user.get("uid") or ""),
+        str(current_user.get("id") or ""),
+    }
     assignee_id = task_data.get("assigneeId")
 
     if role in VIEW_ALL_ROLES:
         return True
-    if assignee_id == uid:
+    if assignee_id in current_identifiers:
         return True
     if role == "lead":
-        return assignee_id in _get_descendants(uid, user_map)
+        return assignee_id in _get_descendants(current_identifiers, user_map)
     return False
 
 
 def _can_modify_task(current_user: Dict[str, Any], task_data: Dict[str, Any], user_map: Dict[str, Dict[str, Any]]) -> bool:
     role = current_user.get("role")
-    uid = current_user.get("uid")
+    current_identifiers = {
+        str(current_user.get("uid") or ""),
+        str(current_user.get("id") or ""),
+    }
     assignee_id = task_data.get("assigneeId")
 
     if role in VIEW_ALL_ROLES:
         return True
     if role == "lead":
-        return assignee_id == uid or assignee_id in _get_descendants(uid, user_map)
-    return assignee_id == uid
+        return assignee_id in current_identifiers or assignee_id in _get_descendants(current_identifiers, user_map)
+    return assignee_id in current_identifiers
 
 
 async def _current_internal_user_id(firebase_uid: str) -> Optional[str]:
@@ -136,7 +151,11 @@ async def create_task(task_data: TaskCreate, current_user: dict = Depends(get_cu
         assignee_public = await SupabaseHelper.get_public_user_by_id(assignee_row["id"])
         if creator_role == "lead":
             user_map = await SupabaseHelper.get_public_user_map()
-            if assignee_public.get("role") != "employee" or task_data.assigneeId not in _get_descendants(creator_uid, user_map):
+            creator_identifiers = {
+                str(current_user.get("uid") or ""),
+                str(current_user.get("id") or ""),
+            }
+            if assignee_public.get("role") != "employee" or task_data.assigneeId not in _get_descendants(creator_identifiers, user_map):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Leads can create tasks only for their reporting employees",
@@ -154,7 +173,7 @@ async def create_task(task_data: TaskCreate, current_user: dict = Depends(get_cu
             "assignee_email": task_data.assigneeEmail or assignee_public.get("email"),
             "assigned_by": str(creator_row["id"]),
             "created_by_name": current_user.get("name"),
-            "due_date": task_data.dueDate,
+            "due_date": _normalize_due_date(task_data.dueDate),
             "priority": task_data.priority,
             "status": task_data.status,
             "attachments": task_data.attachments or [],
@@ -249,7 +268,7 @@ async def update_task(task_id: str, task_update: TaskUpdate, current_user: dict 
         if "description" in update_data:
             db_update["description"] = update_data["description"]
         if "dueDate" in update_data:
-            db_update["due_date"] = update_data["dueDate"]
+            db_update["due_date"] = _normalize_due_date(update_data["dueDate"])
         if "priority" in update_data:
             db_update["priority"] = update_data["priority"]
         if "status" in update_data:

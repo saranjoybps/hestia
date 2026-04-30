@@ -26,8 +26,23 @@ APPROVAL_CREATOR_ROLES = {
 
 
 def _get_descendants(manager_uid: str, user_map: Dict[str, Dict[str, Any]], max_depth: int = 8) -> Set[str]:
-    visited: Set[str] = set()
-    frontier: Set[str] = {manager_uid}
+    def _identifiers(row: Dict[str, Any]) -> Set[str]:
+        identifiers: Set[str] = set()
+        if row.get("uid"):
+            identifiers.add(str(row["uid"]))
+        if row.get("id"):
+            identifiers.add(str(row["id"]))
+        return identifiers
+
+    root_identifiers: Set[str] = {str(manager_uid)} if manager_uid else set()
+    for row in user_map.values():
+        row_identifiers = _identifiers(row)
+        if str(manager_uid) in row_identifiers:
+            root_identifiers.update(row_identifiers)
+            break
+
+    visited: Set[str] = set(root_identifiers)
+    frontier: Set[str] = set(root_identifiers)
     depth = 0
     while frontier and depth < max_depth:
         next_frontier: Set[str] = set()
@@ -35,12 +50,15 @@ def _get_descendants(manager_uid: str, user_map: Dict[str, Dict[str, Any]], max_
             for other_uid, data in user_map.items():
                 if other_uid in visited or other_uid == manager_uid:
                     continue
-                if data.get("manager_id") == uid or data.get("lead_id") == uid:
-                    visited.add(other_uid)
-                    next_frontier.add(other_uid)
+                data_identifiers = _identifiers(data)
+                manager_id = str(data.get("manager_id") or "")
+                lead_id = str(data.get("lead_id") or "")
+                if manager_id in frontier or lead_id in frontier:
+                    visited.update(data_identifiers)
+                    next_frontier.update(data_identifiers)
         frontier = next_frontier
         depth += 1
-    return visited
+    return visited - root_identifiers
 
 
 def _ensure_shift_hierarchy_access(current_user: Dict[str, Any], target_user: Dict[str, Any], action: str) -> None:
@@ -71,6 +89,7 @@ async def _shift_to_public(row: Dict[str, Any]) -> Dict[str, Any]:
     approver = await SupabaseHelper.get_public_user_by_id(row.get("approved_by")) if row.get("approved_by") else None
     return {
         "id": str(row.get("id")),
+        "name": row.get("name"),
         "employee_id": employee.get("uid") if employee else None,
         "employee_name": row.get("employee_name") or (employee.get("name") if employee else None),
         "employee_email": row.get("employee_email") or (employee.get("email") if employee else None),
@@ -111,6 +130,14 @@ def _normalize_shift_row(row: Dict[str, Any]) -> Dict[str, Any]:
     return row
 
 
+def _build_shift_name(employee_name: Optional[str], shift_type: str, shift_date: str) -> str:
+    """Generate a stable display name for shift rows that require a non-null name."""
+    person = (employee_name or "Employee").strip() or "Employee"
+    shift_label = (shift_type or "shift").replace("_", " ").strip().title() or "Shift"
+    date_label = (shift_date or "").strip()
+    return f"{person} - {shift_label} - {date_label}".strip(" -")
+
+
 @router.post("/shifts")
 async def create_shift(
     shift: ShiftCreate,
@@ -141,6 +168,7 @@ async def create_shift(
             raise HTTPException(status_code=400, detail="A shift already exists for this employee on this date")
 
         shift_row = {
+            "name": _build_shift_name(employee_data.get("name"), shift.shift_type, shift.shift_date),
             "employee_id": str(employee_row["id"]),
             "employee_name": employee_data.get("name"),
             "employee_email": employee_data.get("email"),

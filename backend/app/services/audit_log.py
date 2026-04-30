@@ -3,6 +3,8 @@ from datetime import datetime
 from typing import Optional, Any
 from uuid import uuid4
 
+from fastapi.encoders import jsonable_encoder
+
 from app.dependencies import supabase
 
 
@@ -46,7 +48,7 @@ def log_audit_event(
 
     def _write():
         try:
-            supabase.table("audit_logs").insert(audit_doc).execute()
+            supabase.table("audit_logs").insert(jsonable_encoder(audit_doc)).execute()
         except Exception:
             pass
 

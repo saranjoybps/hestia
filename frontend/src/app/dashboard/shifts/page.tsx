@@ -44,8 +44,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { toast } from 'sonner';
+import { LoadingState } from '@/components/common/LoadingState';
 import {
   Clock,
   Plus,
@@ -55,7 +56,8 @@ import {
   Calendar,
   Users,
   CheckCircle,
-  XCircle
+  XCircle,
+  Loader2
 } from 'lucide-react';
 
 interface Shift {
@@ -98,6 +100,7 @@ interface ShiftFormData {
 export default function ShiftsPage() {
   const { userData, user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [myShifts, setMyShifts] = useState<Shift[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<Shift[]>([]);
@@ -157,6 +160,13 @@ export default function ShiftsPage() {
   const canApprove = isManager || isDirector || isSuperAdmin;
   const canViewOwnShiftsTab = role === 'employee' || isLead || isManager || isHR;
 
+  const renderLoadingButtonContent = (loadingLabel: string, defaultLabel: string, icon?: ReactNode) => (
+    <>
+      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : icon}
+      <span>{loading ? loadingLabel : defaultLabel}</span>
+    </>
+  );
+
   useEffect(() => {
     if (user) {
       fetchShifts();
@@ -180,6 +190,14 @@ export default function ShiftsPage() {
     if (loadingReportees) return;
     try {
       setLoadingReportees(true);
+      const dedupeByUid = (employees: Employee[]) =>
+        Array.from(
+          new Map(
+            employees
+              .filter((employee) => employee?.uid)
+              .map((employee) => [employee.uid, employee] as const)
+          ).values()
+        );
       const token = await user?.getIdToken();
       if (!token || !userData?.uid) return;
 
@@ -191,7 +209,7 @@ export default function ShiftsPage() {
         if (!response.ok) throw new Error('Failed to load employees');
         const data = await response.json();
         const users: Employee[] = data.users || data;
-        setReportees(users.filter((u) => u.uid !== userData.uid));
+        setReportees(dedupeByUid(users.filter((u) => u.uid !== userData.uid)));
         return;
       }
 
@@ -227,7 +245,7 @@ export default function ShiftsPage() {
         });
       }
 
-      setReportees(all);
+      setReportees(dedupeByUid(all));
     } catch (error) {
       console.error('Error fetching reportees:', error);
     } finally {
@@ -236,6 +254,7 @@ export default function ShiftsPage() {
   };
 
   const fetchShifts = async () => {
+    setInitialLoading(true);
     try {
       const token = await user?.getIdToken();
       const response = await fetch(`${API_BASE_URL}/shifts`, {
@@ -250,10 +269,13 @@ export default function ShiftsPage() {
     } catch (error) {
       console.error('Error fetching shifts:', error);
       toast.error('Failed to fetch shifts');
+    } finally {
+      setInitialLoading(false);
     }
   };
 
   const fetchMyShifts = async () => {
+    setInitialLoading(true);
     try {
       const token = await user?.getIdToken();
       if (!token || !userData?.uid) return;
@@ -268,10 +290,13 @@ export default function ShiftsPage() {
       }
     } catch (error) {
       console.error('Error fetching my shifts:', error);
+    } finally {
+      setInitialLoading(false);
     }
   };
 
   const fetchPendingApprovals = async () => {
+    setInitialLoading(true);
     try {
       const token = await user?.getIdToken();
       const response = await fetch(`${API_BASE_URL}/shifts/pending-approvals`, {
@@ -284,6 +309,8 @@ export default function ShiftsPage() {
       }
     } catch (error) {
       console.error('Error fetching pending approvals:', error);
+    } finally {
+      setInitialLoading(false);
     }
   };
 
@@ -842,7 +869,9 @@ export default function ShiftsPage() {
                     </Select>
                   </div>
                 </div>
-                {shifts.length > 0 ? (
+                {initialLoading && shifts.length === 0 ? (
+                  <LoadingState label="Loading shifts" />
+                ) : shifts.length > 0 ? (
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -967,7 +996,9 @@ export default function ShiftsPage() {
                 <CardDescription>View your assigned shifts</CardDescription>
               </CardHeader>
               <CardContent>
-                {myShifts.length > 0 ? (
+                {initialLoading && myShifts.length === 0 ? (
+                  <LoadingState label="Loading my shifts" />
+                ) : myShifts.length > 0 ? (
                   <div className="space-y-4">
                     {myShifts.map((shift) => (
                       <Card key={shift.id} className="border">
@@ -1092,20 +1123,20 @@ export default function ShiftsPage() {
                       disabled={selectedPendingIds.length === 0 || loading}
                       onClick={() => setShowBulkRejectDialog(true)}
                     >
-                      <XCircle className="h-4 w-4 mr-2" />
-                      Reject Selected
+                      {renderLoadingButtonContent('Rejecting...', 'Reject Selected', <XCircle className="h-4 w-4" />)}
                     </Button>
                     <Button
                       disabled={selectedPendingIds.length === 0 || loading}
                       onClick={() => setShowBulkApproveDialog(true)}
                     >
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Approve Selected
+                      {renderLoadingButtonContent('Approving...', 'Approve Selected', <CheckCircle className="h-4 w-4" />)}
                     </Button>
                   </div>
                 </div>
 
-                {filteredPendingApprovals.length > 0 ? (
+                {initialLoading && pendingApprovals.length === 0 ? (
+                  <LoadingState label="Loading pending approvals" />
+                ) : filteredPendingApprovals.length > 0 ? (
                   <div className="space-y-4">
                     {filteredPendingApprovals.map((shift) => (
                       <Card key={shift.id} className="border border-yellow-200 dark:border-yellow-800">
@@ -1185,9 +1216,10 @@ export default function ShiftsPage() {
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                                     <AlertDialogAction
                                       className="bg-green-600 hover:bg-green-700"
+                                      disabled={loading}
                                       onClick={() => handleApproveShift(shift.id)}
                                     >
-                                      Approve Shift
+                                      {renderLoadingButtonContent('Approving...', 'Approve Shift', <CheckCircle className="h-4 w-4" />)}
                                     </AlertDialogAction>
                                   </AlertDialogFooter>
                                 </AlertDialogContent>
@@ -1219,6 +1251,7 @@ export default function ShiftsPage() {
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                                     <AlertDialogAction
                                       className="bg-red-600 hover:bg-red-700"
+                                      disabled={loading}
                                       onClick={() => {
                                         const reason = (document.getElementById(`rejection-reason-${shift.id}`) as HTMLInputElement)?.value;
                                         if (reason?.trim()) {
@@ -1228,7 +1261,7 @@ export default function ShiftsPage() {
                                         }
                                       }}
                                     >
-                                      Reject Shift
+                                      {renderLoadingButtonContent('Rejecting...', 'Reject Shift', <XCircle className="h-4 w-4" />)}
                                     </AlertDialogAction>
                                   </AlertDialogFooter>
                                 </AlertDialogContent>
@@ -1264,9 +1297,10 @@ export default function ShiftsPage() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-green-600 hover:bg-green-700"
+              disabled={loading}
               onClick={() => handleBulkApproveShifts(selectedPendingIds)}
             >
-              Approve Selected
+              {renderLoadingButtonContent('Approving...', 'Approve Selected')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1295,9 +1329,10 @@ export default function ShiftsPage() {
             <AlertDialogCancel onClick={() => setBulkRejectReason('')}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-red-600 hover:bg-red-700"
+              disabled={loading}
               onClick={() => handleBulkRejectShifts(selectedPendingIds, bulkRejectReason)}
             >
-              Reject Selected
+              {renderLoadingButtonContent('Rejecting...', 'Reject Selected')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1416,7 +1451,7 @@ export default function ShiftsPage() {
               Cancel
             </Button>
             <Button onClick={handleCreateShift} disabled={loading}>
-              {loading ? 'Creating...' : 'Create Shift'}
+              {renderLoadingButtonContent('Creating...', 'Create Shift')}
             </Button>
           </div>
         </SheetContent>
@@ -1604,7 +1639,7 @@ export default function ShiftsPage() {
               Cancel
             </Button>
             <Button onClick={handleBulkCreateShifts} disabled={loading}>
-              {loading ? 'Creating...' : 'Allocate Shifts'}
+              {renderLoadingButtonContent('Creating...', 'Allocate Shifts')}
             </Button>
           </div>
         </SheetContent>
@@ -1777,7 +1812,7 @@ export default function ShiftsPage() {
               Cancel
             </Button>
             <Button onClick={handleUpdateShift} disabled={loading}>
-              {loading ? 'Updating...' : 'Update Shift'}
+              {renderLoadingButtonContent('Updating...', 'Update Shift')}
             </Button>
           </div>
         </SheetContent>

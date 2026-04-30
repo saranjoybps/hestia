@@ -2,6 +2,7 @@ from datetime import datetime, date as date_type
 from typing import Optional, Any, Dict, List
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi.encoders import jsonable_encoder
 
 from app.dependencies import get_current_user, require_role, supabase
 from app.services.audit_log import log_audit_event
@@ -10,10 +11,44 @@ from app.supabase_helper import SupabaseHelper
 router = APIRouter(prefix="/attendance", tags=["Attendance"])
 
 
+def _get_descendants(root_identifiers: set[str], user_map: Dict[str, Dict[str, Any]], max_depth: int = 8) -> set[str]:
+    visited: set[str] = set()
+    frontier: set[str] = set(root_identifiers)
+    depth = 0
+
+    while frontier and depth < max_depth:
+        next_frontier: set[str] = set()
+        for uid, data in user_map.items():
+            if uid in visited or uid in root_identifiers:
+                continue
+            if str(data.get("manager_id") or "") in frontier or str(data.get("lead_id") or "") in frontier:
+                visited.add(uid)
+                next_frontier.add(uid)
+        frontier = next_frontier
+        depth += 1
+
+    return visited
+
+
 def _time_str(value: Any) -> Optional[str]:
     if value is None:
         return None
-    text = str(value)
+    if isinstance(value, datetime):
+        return value.strftime("%H:%M")
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    if len(text) >= 5 and text[2] == ":":
+        return text[:5]
+
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return parsed.strftime("%H:%M")
+    except ValueError:
+        pass
+
     if len(text) >= 5:
         return text[:5]
     return text or None
@@ -56,6 +91,23 @@ def _parse_time_for_date(day: str, value: Optional[str]) -> Optional[datetime]:
     return None
 
 
+def _iso_datetime(value: Optional[datetime]) -> Optional[str]:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _json_datetime(value: Any) -> Any:
+    if isinstance(value, (datetime, date_type)):
+        return value.isoformat()
+    return value
+
+
+def _is_duplicate_attendance_error(error: Exception) -> bool:
+    message = str(error)
+    return "attendance_user_id_date_key" in message or "23505" in message or "duplicate key value violates unique constraint" in message
+
+
 def _work_hours(day: str, check_in: Optional[str], check_out: Optional[str]) -> float:
     start = _parse_time_for_date(day, check_in)
     end = _parse_time_for_date(day, check_out)
@@ -91,12 +143,33 @@ def _attendance_row(
         "notes": row.get("notes") or "",
         "markedBy": marked_by or user.get("uid"),
         "correctedBy": corrected_user.get("uid"),
-        "created_at": row.get("created_at"),
+        "created_at": _json_datetime(row.get("created_at")),
     }
 
 
 async def _load_user_map() -> Dict[str, Dict[str, Any]]:
     return await SupabaseHelper.get_public_user_map()
+
+
+async def _can_view_employee_attendance(current_user: Dict[str, Any], employee: Dict[str, Any]) -> bool:
+    current_uid = str(current_user.get("uid") or "")
+    current_internal_id = str(current_user.get("id") or "")
+    employee_uid = str(employee.get("uid") or "")
+    employee_internal_id = str(employee.get("id") or "")
+
+    if not current_uid or not employee_uid:
+        return False
+    if current_uid == employee_uid or current_internal_id == employee_internal_id:
+        return True
+
+    role = current_user.get("role")
+    if role in {"manager", "director", "hr"}:
+        return True
+    if role == "lead":
+        user_map = await _load_user_map()
+        descendants = _get_descendants({current_uid, current_internal_id}, user_map)
+        return employee_uid in descendants or employee_internal_id in descendants
+    return False
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
@@ -118,7 +191,9 @@ async def create_attendance(
             manager_id = str(employee.get("manager_id") or "")
             legacy_lead_id = str(employee.get("lead_id") or "")
             current_internal_id = str(current_user.get("id") or "")
-            if manager_id != current_internal_id and legacy_lead_id != current_internal_id:
+            current_firebase_uid = str(current_user.get("uid") or "")
+            allowed_ids = {value for value in [current_internal_id, current_firebase_uid] if value}
+            if manager_id not in allowed_ids and legacy_lead_id not in allowed_ids:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="You can only mark attendance for your reportees",
@@ -139,15 +214,15 @@ async def create_attendance(
             "user_id": employee["id"],
             "date": day,
             "status": status_value,
-            "check_in_time": _parse_time_for_date(day, check_in),
-            "check_out_time": _parse_time_for_date(day, check_out),
+            "check_in_time": _iso_datetime(_parse_time_for_date(day, check_in)),
+            "check_out_time": _iso_datetime(_parse_time_for_date(day, check_out)),
             "notes": notes,
             "marked_by": current_user.get("id"),
             "corrected_by": None,
             "corrected_at": None,
         }
 
-        response = supabase.table("attendance").insert(insert_payload).execute()
+        response = supabase.table("attendance").insert(jsonable_encoder(insert_payload)).execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create attendance")
 
@@ -177,11 +252,16 @@ async def create_attendance(
             },
         )
 
-        return attendance_doc
+        return jsonable_encoder(attendance_doc)
 
     except HTTPException:
         raise
     except Exception as e:
+        if _is_duplicate_attendance_error(e):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Attendance is already marked for this employee on this date",
+            )
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error creating attendance: {str(e)}")
 
 
@@ -198,6 +278,8 @@ async def get_attendance(
         if user_id:
             employee = await SupabaseHelper.get_public_user_by_firebase_uid(user_id)
             if employee:
+                if not await _can_view_employee_attendance(current_user, employee):
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not allowed to view this attendance record")
                 query = query.eq("user_id", employee["id"])
             else:
                 return []
@@ -229,6 +311,9 @@ async def get_user_attendance(
         if not employee:
             return []
 
+        if not await _can_view_employee_attendance(current_user, employee):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not allowed to view this attendance record")
+
         query = supabase.table("attendance").select("*").eq("user_id", employee["id"])
         if start_date:
             query = query.gte("date", start_date)
@@ -255,6 +340,9 @@ async def get_monthly_attendance(
         employee = await SupabaseHelper.get_public_user_by_firebase_uid(user_id)
         if not employee:
             return {"year": year, "month": month, "attendance": {}, "stats": {}}
+
+        if not await _can_view_employee_attendance(current_user, employee):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not allowed to view this attendance record")
 
         start_date = f"{year}-{month:02d}-01"
         if month == 12:
@@ -316,9 +404,13 @@ async def update_attendance(
 
         update_data: Dict[str, Any] = {}
         if "check_in" in payload or "checkIn" in payload:
-            update_data["check_in_time"] = _parse_time_for_date(str(existing.data[0].get("date")), payload.get("check_in") or payload.get("checkIn"))
+            update_data["check_in_time"] = _iso_datetime(
+                _parse_time_for_date(str(existing.data[0].get("date")), payload.get("check_in") or payload.get("checkIn"))
+            )
         if "check_out" in payload or "checkOut" in payload:
-            update_data["check_out_time"] = _parse_time_for_date(str(existing.data[0].get("date")), payload.get("check_out") or payload.get("checkOut"))
+            update_data["check_out_time"] = _iso_datetime(
+                _parse_time_for_date(str(existing.data[0].get("date")), payload.get("check_out") or payload.get("checkOut"))
+            )
         if "status" in payload:
             update_data["status"] = _db_status(payload.get("status"))
         if "notes" in payload:
@@ -328,12 +420,12 @@ async def update_attendance(
         update_data["corrected_by"] = current_user.get("id")
         update_data["corrected_at"] = datetime.utcnow().isoformat()
 
-        response = supabase.table("attendance").update(update_data).eq("id", attendance_id).execute()
+        response = supabase.table("attendance").update(jsonable_encoder(update_data)).eq("id", attendance_id).execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attendance record not found")
 
         user_map = await _load_user_map()
-        return _attendance_row(response.data[0], user_map, marked_by=current_user.get("uid"))
+        return jsonable_encoder(_attendance_row(response.data[0], user_map, marked_by=current_user.get("uid")))
 
     except HTTPException:
         raise

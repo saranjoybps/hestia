@@ -28,6 +28,7 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { LoadingState } from '@/components/common/LoadingState';
 import {
   Megaphone,
   Plus,
@@ -64,6 +65,8 @@ interface Announcement {
 export default function AnnouncementsPage() {
   const { userData, user } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [announcementsLoading, setAnnouncementsLoading] = useState(true);
+  const [myAnnouncementsLoading, setMyAnnouncementsLoading] = useState(true);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [myAnnouncements, setMyAnnouncements] = useState<Announcement[]>([]);
 
@@ -126,6 +129,7 @@ export default function AnnouncementsPage() {
   }, [user, priorityFilter, statusFilter]);
 
   const fetchAnnouncements = async () => {
+    setAnnouncementsLoading(true);
     try {
       const token = await user?.getIdToken();
       const params = new URLSearchParams({
@@ -135,24 +139,27 @@ export default function AnnouncementsPage() {
 
       const response = await fetch(`${API_BASE_URL}/announcements?${params}`, {
         headers: { 'Authorization': `Bearer ${token}` },
-      });
+        });
 
-      if (response.ok) {
-        const data = await response.json();
+        if (response.ok) {
+          const data = await response.json();
         // Sort: pinned first, then by date
         const sorted = data.sort((a: Announcement, b: Announcement) => {
           if (a.isPinned && !b.isPinned) return -1;
           if (!a.isPinned && b.isPinned) return 1;
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         });
-        setAnnouncements(sorted);
-      }
+          setAnnouncements(sorted);
+        }
     } catch (error) {
       console.error('Error fetching announcements:', error);
+    } finally {
+      setAnnouncementsLoading(false);
     }
   };
 
   const fetchMyAnnouncements = async () => {
+    setMyAnnouncementsLoading(true);
     try {
       const token = await user?.getIdToken();
       const response = await fetch(
@@ -168,6 +175,8 @@ export default function AnnouncementsPage() {
       }
     } catch (error) {
       console.error('Error fetching my announcements:', error);
+    } finally {
+      setMyAnnouncementsLoading(false);
     }
   };
 
@@ -519,7 +528,9 @@ export default function AnnouncementsPage() {
           </Card>
 
           {/* Announcements Grid */}
-          {announcements.length > 0 ? (
+          {announcementsLoading ? (
+            <LoadingState label="Loading announcements" />
+          ) : announcements.length > 0 ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {announcements.map((announcement) => (
                 <AnnouncementCard key={announcement.id} announcement={announcement} />
@@ -540,7 +551,9 @@ export default function AnnouncementsPage() {
         {/* My Announcements Tab */}
         {canCreate && (
           <TabsContent value="my-announcements" className="space-y-4">
-            {myAnnouncements.length > 0 ? (
+            {myAnnouncementsLoading ? (
+              <LoadingState label="Loading your announcements" />
+            ) : myAnnouncements.length > 0 ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {myAnnouncements.map((announcement) => (
                   <AnnouncementCard key={announcement.id} announcement={announcement} showActions={true} />

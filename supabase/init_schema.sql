@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     status TEXT DEFAULT 'open',
     priority TEXT DEFAULT 'medium',
     start_date DATE,
+    -- Nullable so task forms can clear deadlines by sending NULL.
     due_date DATE,
     attachments JSONB DEFAULT '[]'::jsonb,
     completed_at TIMESTAMPTZ,
@@ -138,6 +139,7 @@ CREATE TABLE IF NOT EXISTS announcements (
     content TEXT NOT NULL,
     created_by UUID REFERENCES users(id) ON DELETE SET NULL,
     description TEXT,
+    priority TEXT DEFAULT 'medium',
     target_audience JSONB DEFAULT '[]'::jsonb,
     expiry_date TEXT,
     is_pinned BOOLEAN DEFAULT FALSE,
@@ -202,6 +204,7 @@ CREATE TABLE IF NOT EXISTS departments (
 -- Shifts table
 CREATE TABLE IF NOT EXISTS shifts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
     employee_id UUID REFERENCES users(id) ON DELETE CASCADE,
     employee_name TEXT,
     employee_email TEXT,
@@ -340,12 +343,14 @@ ALTER TABLE IF EXISTS performance_reviews
 
 ALTER TABLE IF EXISTS announcements
     ADD COLUMN IF NOT EXISTS description TEXT,
+    ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'medium',
     ADD COLUMN IF NOT EXISTS target_audience JSONB DEFAULT '[]'::jsonb,
     ADD COLUMN IF NOT EXISTS expiry_date TEXT,
     ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS created_by_name TEXT;
 
 ALTER TABLE IF EXISTS shifts
+    ADD COLUMN IF NOT EXISTS name TEXT,
     ADD COLUMN IF NOT EXISTS employee_id UUID REFERENCES users(id) ON DELETE CASCADE,
     ADD COLUMN IF NOT EXISTS employee_name TEXT,
     ADD COLUMN IF NOT EXISTS employee_email TEXT,

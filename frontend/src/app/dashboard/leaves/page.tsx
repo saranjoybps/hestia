@@ -38,6 +38,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { LoadingState } from '@/components/common/LoadingState';
 import {
   CalendarDays,
   Plus,
@@ -141,6 +142,7 @@ export default function LeavesPage() {
   }, [user, statusFilter, typeFilter]);
 
   const fetchLeaveRequests = async () => {
+    setLoading(true);
     try {
       const token = await user?.getIdToken();
       const params = new URLSearchParams({
@@ -159,6 +161,8 @@ export default function LeavesPage() {
       }
     } catch (error) {
       console.error('Error fetching leave requests:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -582,7 +586,9 @@ export default function LeavesPage() {
               </div>
 
               {/* Table */}
-              {leaveRequests.length > 0 ? (
+              {loading && leaveRequests.length === 0 ? (
+                <LoadingState label="Loading leave requests" />
+              ) : leaveRequests.length > 0 ? (
                 <div className="border rounded-lg overflow-hidden">
                   <Table>
                     <TableHeader>

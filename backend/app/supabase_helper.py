@@ -90,14 +90,50 @@ class SupabaseHelper:
     @staticmethod
     async def get_reportees(firebase_uid: str) -> List[Dict[str, Any]]:
         internal_id = await SupabaseHelper.get_internal_user_id(firebase_uid)
-        if not internal_id:
+        requester = await SupabaseHelper.get_public_user_by_firebase_uid(firebase_uid)
+        if not internal_id and not requester:
             return []
+
+        root_identifiers = {str(value) for value in [internal_id, firebase_uid, requester.get("uid") if requester else None, requester.get("id") if requester else None] if value}
         users = await SupabaseHelper.get_all_public_users()
-        result = []
+
+        # Support both legacy TEXT hierarchy fields (Firebase UID) and migrated UUID hierarchy fields.
+        result_by_key: Dict[str, Dict[str, Any]] = {}
+        visited: set[str] = set()
+        frontier = set(root_identifiers)
         for row in users:
-            if str(row.get("manager_id") or "") == internal_id or str(row.get("lead_id") or "") == internal_id:
-                result.append(row)
-        return result
+            row_uid = str(row.get("uid") or "")
+            row_internal_id = str(row.get("id") or "")
+            row_identifiers = {identifier for identifier in [row_uid, row_internal_id] if identifier}
+            if row_uid in root_identifiers or row_internal_id in root_identifiers:
+                continue
+
+            manager_id = str(row.get("manager_id") or "")
+            lead_id = str(row.get("lead_id") or "")
+            if manager_id in frontier or lead_id in frontier:
+                result_by_key[row_uid or row_internal_id] = row
+                visited.update(row_identifiers)
+                frontier.update(row_identifiers)
+
+        # Expand one more pass so the helper returns the full nested tree, not just direct reportees.
+        changed = True
+        while changed:
+            changed = False
+            for row in users:
+                row_uid = str(row.get("uid") or "")
+                row_internal_id = str(row.get("id") or "")
+                row_identifiers = {identifier for identifier in [row_uid, row_internal_id] if identifier}
+                if not row_identifiers or row_uid in visited or row_internal_id in visited:
+                    continue
+
+                manager_id = str(row.get("manager_id") or "")
+                lead_id = str(row.get("lead_id") or "")
+                if manager_id in frontier or lead_id in frontier:
+                    result_by_key[row_uid or row_internal_id] = row
+                    visited.update(row_identifiers)
+                    frontier.update(row_identifiers)
+                    changed = True
+        return list(result_by_key.values())
 
     @staticmethod
     async def list_public_users(

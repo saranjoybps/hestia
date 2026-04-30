@@ -66,6 +66,7 @@ import {
   TrendingUp,
   Clock
 } from 'lucide-react';
+import { LoadingState } from '@/components/common/LoadingState';
 
 interface Employee {
   uid: string;
@@ -260,6 +261,7 @@ export default function EmployeesPage() {
   };
 
   const fetchEmployees = async () => {
+    setLoading(true);
     try {
       const token = await user?.getIdToken();
       const statusParam = activeTab === 'inactive' ? 'inactive' : 'active';
@@ -289,6 +291,8 @@ export default function EmployeesPage() {
     } catch (error) {
       console.error('Error fetching employees:', error);
       toast.error('Failed to fetch employees');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -915,6 +919,8 @@ export default function EmployeesPage() {
                     </div>
                   )}
                 </div>
+              ) : loading && employees.length === 0 ? (
+                <LoadingState label="Loading employees" />
               ) : (
                 <div className="text-center py-12">
                   <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
