@@ -50,6 +50,7 @@ async def create_announcement(
 
         announcement_row = {
             "title": announcement_data.title,
+            "content": announcement_data.description,
             "description": announcement_data.description,
             "priority": announcement_data.priority,
             "target_audience": announcement_data.targetAudience or [],
@@ -177,6 +178,7 @@ async def update_announcement(
             db_update["title"] = update_data["title"]
         if "description" in update_data:
             db_update["description"] = update_data["description"]
+            db_update["content"] = update_data["description"]
         if "priority" in update_data:
             db_update["priority"] = update_data["priority"]
         if "targetAudience" in update_data:

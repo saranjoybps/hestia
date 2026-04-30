@@ -115,9 +115,10 @@ async def create_attendance(
 
         user_role = current_user.get("role")
         if user_role == "lead":
-            manager_id = employee.get("manager_id")
-            legacy_lead_id = employee.get("lead_id")
-            if manager_id != current_user.get("uid") and legacy_lead_id != current_user.get("uid"):
+            manager_id = str(employee.get("manager_id") or "")
+            legacy_lead_id = str(employee.get("lead_id") or "")
+            current_internal_id = str(current_user.get("id") or "")
+            if manager_id != current_internal_id and legacy_lead_id != current_internal_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="You can only mark attendance for your reportees",
@@ -141,6 +142,7 @@ async def create_attendance(
             "check_in_time": _parse_time_for_date(day, check_in),
             "check_out_time": _parse_time_for_date(day, check_out),
             "notes": notes,
+            "marked_by": current_user.get("id"),
             "corrected_by": None,
             "corrected_at": None,
         }

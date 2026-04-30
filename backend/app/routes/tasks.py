@@ -254,6 +254,10 @@ async def update_task(task_id: str, task_update: TaskUpdate, current_user: dict 
             db_update["priority"] = update_data["priority"]
         if "status" in update_data:
             db_update["status"] = update_data["status"]
+            if update_data["status"] == "completed" and existing_row.get("status") != "completed":
+                db_update["completed_at"] = datetime.utcnow().isoformat()
+            elif update_data["status"] != "completed" and existing_row.get("status") == "completed":
+                db_update["completed_at"] = None
         if "attachments" in update_data:
             db_update["attachments"] = update_data["attachments"] or []
         if "assigneeId" in update_data and update_data["assigneeId"]:

@@ -102,49 +102,6 @@ class FirebaseAuth:
                 headers={"WWW-Authenticate": "Bearer"},
             )
     
-    @staticmethod
-    async def get_current_user(token_data: dict = Depends(verify_token)) -> dict:
-        """Get current user from Firestore, with Redis cache when available."""
-        try:
-            uid = token_data.get("uid")
-
-            # Try Redis cache first to avoid a Firestore read on every request
-            if _redis:
-                try:
-                    cached = _redis.get(f"user:{uid}")
-                    if cached:
-                        return json.loads(cached)
-                except Exception:
-                    pass
-
-            user_ref = db.collection("users").document(uid)
-            user_doc = user_ref.get()
-
-            if not user_doc.exists:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User not found"
-                )
-
-            user_data = user_doc.to_dict()
-            user_data["uid"] = uid
-
-            # Persist to Redis for subsequent requests within the TTL window
-            if _redis:
-                try:
-                    _redis.setex(f"user:{uid}", USER_CACHE_TTL, json.dumps(user_data, default=str))
-                except Exception:
-                    pass
-
-            return user_data
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error fetching user: {str(e)}"
-            )
-
 
 # Dependency functions
 async def provision_supabase_user(token_data: dict, firebase_user_data: dict = None) -> dict:
@@ -216,17 +173,17 @@ def require_permission(*required_permissions: str):
     """Decorator to require specific permissions"""
     async def permission_checker(current_user: dict = Depends(get_current_user)) -> dict:
         user_role = current_user.get("role")
-        
-        # Get permissions for role
-        perm_doc = db.collection("permissions").document(user_role).get()
-        if not perm_doc.exists:
+
+        # Get permissions for role from Supabase
+        response = supabase.table("permissions").select("permissions").eq("role", user_role).execute()
+        if not response.data:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No permissions defined for this role"
             )
-        
-        permissions = perm_doc.to_dict().get("permissions", [])
-        
+
+        permissions = response.data[0].get("permissions", [])
+
         # Check if user has required permissions
         for perm in required_permissions:
             if perm not in permissions:
@@ -234,7 +191,7 @@ def require_permission(*required_permissions: str):
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"Missing required permission: {perm}"
                 )
-        
+
         return current_user
     return permission_checker
 

@@ -89,10 +89,13 @@ class SupabaseHelper:
 
     @staticmethod
     async def get_reportees(firebase_uid: str) -> List[Dict[str, Any]]:
+        internal_id = await SupabaseHelper.get_internal_user_id(firebase_uid)
+        if not internal_id:
+            return []
         users = await SupabaseHelper.get_all_public_users()
         result = []
         for row in users:
-            if row.get("manager_id") == firebase_uid or row.get("lead_id") == firebase_uid:
+            if str(row.get("manager_id") or "") == internal_id or str(row.get("lead_id") or "") == internal_id:
                 result.append(row)
         return result
 

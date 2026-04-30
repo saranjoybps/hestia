@@ -73,7 +73,7 @@ async def create_leave_request(
         if not manager_data or not manager_data.get("email"):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reporting manager email not found for this employee")
 
-        subject = f"Leave Request: {leave_data.name if hasattr(leave_data, 'name') else employee.get('name', 'Employee')} ({leave_type})"
+        subject = f"Leave Request: {employee.get('name', 'Employee')} ({leave_type})"
         body = (
             "Hello"
             + (f" {manager_data.get('name')}," if manager_data.get("name") else ",")
@@ -169,7 +169,10 @@ async def list_leaves(
                 return []
         else:
             if current_user.get("role") not in ["hr", "director"]:
-                query = query.eq("user_id", current_user.get("id"))
+                internal_id = current_user.get("id")
+                if not internal_id:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not resolve user identity")
+                query = query.eq("user_id", internal_id)
 
         if status:
             query = query.eq("status", status)
@@ -187,7 +190,7 @@ async def list_leaves(
 
 
 @router.get("/pending-approvals")
-async def get_pending_approvals(current_user: dict = Depends(get_current_user)):
+async def get_pending_approvals(current_user: dict = Depends(require_role("lead", "manager", "director", "hr"))):
     try:
         user_map = await _load_user_map()
         role = current_user.get("role")

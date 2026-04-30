@@ -24,7 +24,7 @@ class RejectionRequest(BaseModel):
 
 
 async def _review_to_public(row: Dict[str, Any]) -> Dict[str, Any]:
-    user = await SupabaseHelper.get_public_user_by_id(row.get("user_id")) if row.get("user_id") else None
+    user = await SupabaseHelper.get_public_user_by_id(row.get("employee_id")) if row.get("employee_id") else None
     reviewer = await SupabaseHelper.get_public_user_by_id(row.get("reviewer_id")) if row.get("reviewer_id") else None
     approver = await SupabaseHelper.get_public_user_by_id(row.get("approved_by")) if row.get("approved_by") else None
     rejected_by = await SupabaseHelper.get_public_user_by_id(row.get("rejected_by")) if row.get("rejected_by") else None
@@ -40,8 +40,8 @@ async def _review_to_public(row: Dict[str, Any]) -> Dict[str, Any]:
         "rating": row.get("rating", 0),
         "context": row.get("context"),
         "reviewDate": row.get("review_date"),
-        "department": row.get("department"),
-        "designation": row.get("designation"),
+        "department": user.get("department") if user else None,
+        "designation": user.get("designation") if user else None,
         "status": row.get("status"),
         "approvedBy": approver.get("uid") if approver else None,
         "approverName": row.get("approver_name") or (approver.get("name") if approver else None),
@@ -74,7 +74,7 @@ async def create_performance_review(
 
         status_value = "approved" if user_role == "director" else "pending"
         review_row = {
-            "user_id": str(employee_row["id"]),
+            "employee_id": str(employee_row["id"]),
             "user_name": review_data.userName,
             "user_email": review_data.userEmail,
             "reviewer_id": str(reviewer_row["id"]),
@@ -84,8 +84,6 @@ async def create_performance_review(
             "rating": review_data.rating,
             "context": review_data.context,
             "review_date": review_data.reviewDate,
-            "department": review_data.department,
-            "designation": review_data.designation,
             "status": status_value,
             "approved_by": None,
             "approver_name": None,

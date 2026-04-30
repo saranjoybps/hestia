@@ -190,7 +190,14 @@ async def approve_onboarding_request(request_id: str, current_user: dict = Depen
             "updated_at": None,
             "created_by": current_user.get("uid"),
         }
-        supabase.table("users").insert(user_doc).execute()
+        insert_resp = supabase.table("users").insert(user_doc).execute()
+        if not insert_resp.data:
+            # Roll back the Firebase user to avoid an orphan account
+            try:
+                firebase_auth.delete_user(firebase_user.uid)
+            except Exception:
+                pass
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create user in database; Firebase account rolled back")
 
         supabase.table("onboarding_requests").update({
             "status": "approved",
@@ -199,6 +206,14 @@ async def approve_onboarding_request(request_id: str, current_user: dict = Depen
             "reviewed_at": datetime.utcnow().isoformat(),
         }).eq("id", request_id).execute()
 
+        # Resolve manager/lead UUIDs to display names for the welcome email
+        manager_row = await SupabaseHelper.get_public_user_by_id(str(request_data["manager_id"])) if request_data.get("manager_id") else None
+        lead_row = await SupabaseHelper.get_public_user_by_id(str(request_data["lead_id"])) if request_data.get("lead_id") else None
+        manager_name = manager_row.get("name") if manager_row else None
+        lead_name = lead_row.get("name") if lead_row else None
+
+        email_sent = True
+        email_error: str | None = None
         try:
             send_onboarding_email(
                 to_email=request_data.get("email"),
@@ -207,16 +222,19 @@ async def approve_onboarding_request(request_id: str, current_user: dict = Depen
                 role=request_data.get("role"),
                 department=request_data.get("department"),
                 designation=request_data.get("designation"),
-                manager=request_data.get("manager_id"),
-                lead=request_data.get("lead_id"),
+                manager=manager_name,
+                lead=lead_name,
             )
         except Exception as e:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to send onboarding email: {str(e)}")
+            email_sent = False
+            email_error = str(e)
 
         return {
             "message": "Onboarding request approved and user created successfully",
             "user_id": firebase_user.uid,
             "temp_password": temp_password,
+            "email_sent": email_sent,
+            **({"email_error": email_error} if email_error else {}),
         }
     except HTTPException:
         raise

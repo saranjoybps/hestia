@@ -268,39 +268,88 @@ async def get_employee_metrics(
     current_user: dict = Depends(require_role("manager", "director", "hr")),
 ):
     try:
+        # 1 query — all users, filtered by department if provided
         users_resp = supabase.table("users").select("*").execute()
-        users = []
-        for row in users_resp.data or []:
-            if department and row.get("department") != department:
-                continue
-            users.append(row)
+        users = [
+            row for row in (users_resp.data or [])
+            if not department or row.get("department") == department
+        ]
 
+        if not users:
+            return {"employees": []}
+
+        user_ids = [str(u["id"]) for u in users]
+
+        # 4 bulk queries — one per table across all users at once
+        attendance_rows = (
+            supabase.table("attendance")
+            .select("user_id, status")
+            .in_("user_id", user_ids)
+            .gte("date", startDate)
+            .lte("date", endDate)
+            .execute().data or []
+        )
+        leaves_rows = (
+            supabase.table("leaves")
+            .select("user_id")
+            .in_("user_id", user_ids)
+            .gte("start_date", startDate)
+            .lte("start_date", endDate)
+            .eq("status", "approved")
+            .execute().data or []
+        )
+        reviews_rows = (
+            supabase.table("performance_reviews")
+            .select("user_id, rating")
+            .in_("user_id", user_ids)
+            .eq("status", "approved")
+            .execute().data or []
+        )
+        tasks_rows = (
+            supabase.table("tasks")
+            .select("assigned_to")
+            .in_("assigned_to", user_ids)
+            .eq("status", "completed")
+            .execute().data or []
+        )
+
+        # Group results by user_id in Python — no extra DB round trips
+        attendance_by_user: Dict[str, List[str]] = defaultdict(list)
+        for row in attendance_rows:
+            attendance_by_user[str(row["user_id"])].append(row["status"])
+
+        leaves_by_user: Dict[str, int] = defaultdict(int)
+        for row in leaves_rows:
+            leaves_by_user[str(row["user_id"])] += 1
+
+        ratings_by_user: Dict[str, List[float]] = defaultdict(list)
+        for row in reviews_rows:
+            ratings_by_user[str(row["user_id"])].append(float(row.get("rating") or 0))
+
+        tasks_by_user: Dict[str, int] = defaultdict(int)
+        for row in tasks_rows:
+            tasks_by_user[str(row["assigned_to"])] += 1
+
+        # Build metrics from in-memory dicts — O(users), zero DB calls
         employee_metrics = []
         for user in users:
-            user_id = user["id"]
-            attendance_docs = supabase.table("attendance").select("*").eq("user_id", user_id).gte("date", startDate).lte("date", endDate).execute().data or []
-            total_days = len(attendance_docs)
-            present_days = len([doc for doc in attendance_docs if doc.get("status") == "present"])
+            uid = str(user["id"])
+            statuses = attendance_by_user[uid]
+            total_days = len(statuses)
+            present_days = statuses.count("present")
             attendance_rate = (present_days / total_days * 100) if total_days > 0 else 0
 
-            leaves_docs = supabase.table("leaves").select("*").eq("user_id", user_id).gte("start_date", startDate).lte("start_date", endDate).eq("status", "approved").execute().data or []
-            leaves_used = len(leaves_docs)
-
-            reviews_docs = supabase.table("performance_reviews").select("*").eq("user_id", user_id).eq("status", "approved").execute().data or []
-            ratings = [float(doc.get("rating", 0) or 0) for doc in reviews_docs]
+            ratings = ratings_by_user[uid]
             avg_rating = (sum(ratings) / len(ratings)) if ratings else 0
-
-            tasks_docs = supabase.table("tasks").select("*").eq("assigned_to", user_id).eq("status", "completed").execute().data or []
-            tasks_completed = len(tasks_docs)
 
             employee_metrics.append({
                 "name": user.get("name", "Unknown"),
                 "department": user.get("department", "Unknown"),
                 "designation": user.get("designation", "Unknown"),
                 "attendanceRate": round(attendance_rate, 2),
-                "leavesUsed": leaves_used,
+                "leavesUsed": leaves_by_user[uid],
                 "avgRating": round(avg_rating, 2),
-                "tasksCompleted": tasks_completed,
+                "tasksCompleted": tasks_by_user[uid],
             })
 
         return {"employees": sorted(employee_metrics, key=lambda x: x["name"])}
