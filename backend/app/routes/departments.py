@@ -1,9 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from app.dependencies import db, get_current_user, require_role
-from app.services.audit_log import log_audit_event
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+
+from app.dependencies import get_current_user, supabase, require_role
+from app.services.audit_log import log_audit_event
+from app.supabase_helper import SupabaseHelper
 
 router = APIRouter(prefix="/departments", tags=["Departments"])
 
@@ -20,286 +23,217 @@ class DepartmentUpdate(BaseModel):
     head_id: Optional[str] = None
 
 
+async def _department_to_public(row: Dict[str, Any], user_map: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    head_id = row.get("head_id")
+    head_name = None
+    if head_id:
+        head_user = user_map.get(str(head_id))
+        if head_user:
+            head_name = head_user.get("name")
+            head_id = head_user.get("uid")
+
+    return {
+        "id": str(row.get("id")),
+        "name": row.get("name"),
+        "description": row.get("description"),
+        "head_id": head_id,
+        "headName": head_name,
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+    }
+
+
 @router.post("/")
 async def create_department(
     department: DepartmentCreate,
-    current_user: dict = Depends(require_role("hr", "director"))
+    current_user: dict = Depends(require_role("hr", "director")),
 ):
-    """Create a new department"""
     try:
-        # Check if department already exists
-        existing = db.collection('departments').where('name', '==', department.name).limit(1).stream()
-        if any(existing):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Department with this name already exists"
-            )
-        
-        dept_data = department.dict()
-        dept_data['created_at'] = datetime.utcnow().isoformat()
-        dept_data['updated_at'] = datetime.utcnow().isoformat()
-        
-        doc_ref = db.collection('departments').document()
-        doc_ref.set(dept_data)
+        existing = supabase.table("departments").select("id").eq("name", department.name).limit(1).execute()
+        if existing.data:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Department with this name already exists")
 
-        # Audit log - department created
+        head_internal_id = None
+        if department.head_id:
+            head_row = await SupabaseHelper.get_user_row_by_firebase_uid(department.head_id)
+            if not head_row:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Head user not found")
+            head_internal_id = str(head_row["id"])
+
+        dept_data = {
+            "name": department.name,
+            "description": department.description,
+            "head_id": head_internal_id,
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        response = supabase.table("departments").insert(dept_data).execute()
+        inserted = response.data[0] if response.data else None
+        if not inserted:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create department")
+
+        user_map = await SupabaseHelper.get_public_user_map()
+        dept_public = await _department_to_public(inserted, user_map)
+
         log_audit_event(
             actor_id=current_user.get("uid"),
             actor_name=current_user.get("name"),
             actor_email=current_user.get("email"),
             module="organization",
             action="department_created",
-            description=(
-                f"{current_user.get('name', 'Someone')} created department "
-                f"\"{dept_data.get('name')}\"."
-            ),
+            description=f"{current_user.get('name', 'Someone')} created department \"{dept_public.get('name')}\".",
             result="success",
             target_type="department",
-            target_id=doc_ref.id,
+            target_id=dept_public["id"],
             metadata={
-                "name": dept_data.get("name"),
-                "head_id": dept_data.get("head_id"),
-                "description": dept_data.get("description")
-            }
+                "name": dept_public.get("name"),
+                "head_id": dept_public.get("head_id"),
+                "description": dept_public.get("description"),
+            },
         )
-        
-        return {
-            "id": doc_ref.id,
-            **dept_data
-        }
-        
+
+        return dept_public
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating department: {str(e)}"
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error creating department: {str(e)}")
 
 
 @router.get("/")
-async def list_departments(
-    current_user: dict = Depends(get_current_user)
-):
-    """Get all departments - optimized to reduce database queries"""
+async def list_departments(current_user: dict = Depends(get_current_user)):
     try:
-        # Fetch all departments
-        docs = db.collection('departments').stream()
-        departments_list = []
-        
-        for doc in docs:
-            dept_data = doc.to_dict()
-            dept_data['id'] = doc.id
-            departments_list.append(dept_data)
-        
-        # Fetch all users in one query
-        all_users = {}
-        users_query = db.collection('users').stream()
-        dept_employee_counts = {}
-        
-        for user in users_query:
-            user_data = user.to_dict()
-            user_id = user.id
-            all_users[user_id] = user_data
-            
-            # Count employees per department
-            dept_name = user_data.get('department')
+        dept_resp = supabase.table("departments").select("*").order("name").execute()
+        departments_list = dept_resp.data or []
+
+        users_resp = supabase.table("users").select("id, firebase_uid, name, department").execute()
+        user_rows = users_resp.data or []
+        user_map = await SupabaseHelper.get_public_user_map()
+
+        dept_employee_counts: Dict[str, int] = {}
+        for user in user_rows:
+            dept_name = user.get("department")
             if dept_name:
                 dept_employee_counts[dept_name] = dept_employee_counts.get(dept_name, 0) + 1
-        
-        # Enrich departments with head names and employee counts
+
+        public_departments = []
         for dept in departments_list:
-            # Get head name from cached users
-            if dept.get('head_id') and dept['head_id'] in all_users:
-                dept['headName'] = all_users[dept['head_id']].get('name', 'Unknown')
-            
-            # Get employee count from aggregated counts
-            dept['employeeCount'] = dept_employee_counts.get(dept['name'], 0)
-        
-        return {
-            "departments": departments_list
-        }
-        
+            public_dept = await _department_to_public(dept, user_map)
+            public_dept["employeeCount"] = dept_employee_counts.get(public_dept.get("name"), 0)
+            public_departments.append(public_dept)
+
+        return {"departments": public_departments}
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching departments: {str(e)}"
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error fetching departments: {str(e)}")
 
 
 @router.get("/{department_id}")
-async def get_department(
-    department_id: str,
-    current_user: dict = Depends(get_current_user)
-):
-    """Get a single department"""
+async def get_department(department_id: str, current_user: dict = Depends(get_current_user)):
     try:
-        doc = db.collection('departments').document(department_id).get()
-        
-        if not doc.exists:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Department not found"
-            )
-        
-        dept_data = doc.to_dict()
-        dept_data['id'] = doc.id
-        
-        # Get head name if head_id exists
-        if dept_data.get('head_id'):
-            head_doc = db.collection('users').document(dept_data['head_id']).get()
-            if head_doc.exists:
-                dept_data['headName'] = head_doc.to_dict().get('name', 'Unknown')
-        
-        # Get employees in this department
-        employees_docs = db.collection('users').where('department', '==', dept_data['name']).stream()
+        doc = supabase.table("departments").select("*").eq("id", department_id).single().execute()
+        dept_data = doc.data if doc.data else None
+        if not dept_data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+
+        user_map = await SupabaseHelper.get_public_user_map()
+        dept_public = await _department_to_public(dept_data, user_map)
+
+        users_resp = supabase.table("users").select("*").execute()
         employees = []
-        for emp_doc in employees_docs:
-            emp_data = emp_doc.to_dict()
-            emp_data['uid'] = emp_doc.id
-            employees.append(emp_data)
-        
-        dept_data['employees'] = employees
-        dept_data['employeeCount'] = len(employees)
-        
-        return dept_data
-        
+        for user in users_resp.data or []:
+            if user.get("department") == dept_public.get("name"):
+                public_user = await SupabaseHelper.get_public_user_by_id(user.get("id"))
+                if public_user:
+                    employees.append(public_user)
+        dept_public["employees"] = employees
+        dept_public["employeeCount"] = len(employees)
+        return dept_public
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error fetching department: {str(e)}"
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error fetching department: {str(e)}")
 
 
 @router.put("/{department_id}")
 async def update_department(
     department_id: str,
     department: DepartmentUpdate,
-    current_user: dict = Depends(require_role("hr", "director"))
+    current_user: dict = Depends(require_role("hr", "director")),
 ):
-    """Update a department"""
     try:
-        doc_ref = db.collection('departments').document(department_id)
-        doc = doc_ref.get()
-        
-        if not doc.exists:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Department not found"
-            )
-        
-        # Check if new name conflicts with existing department
-        if department.name:
-            existing = db.collection('departments')\
-                .where('name', '==', department.name)\
-                .limit(1)\
-                .stream()
-            
-            for existing_doc in existing:
-                if existing_doc.id != department_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Department with this name already exists"
-                    )
-        
-        # Update only provided fields
-        update_data = {k: v for k, v in department.dict().items() if v is not None}
-        update_data['updated_at'] = datetime.utcnow().isoformat()
-        
-        doc_ref.update(update_data)
-        
-        # Get updated document
-        updated_doc = doc_ref.get()
-        result = updated_doc.to_dict()
-        result['id'] = department_id
+        existing_resp = supabase.table("departments").select("*").eq("id", department_id).execute()
+        if not existing_resp.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
 
-        # Audit log - department updated
+        if department.name:
+            existing = supabase.table("departments").select("id").eq("name", department.name).limit(1).execute()
+            for row in existing.data or []:
+                if str(row.get("id")) != department_id:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Department with this name already exists")
+
+        update_data = {k: v for k, v in department.model_dump().items() if v is not None}
+        if "head_id" in update_data and update_data["head_id"]:
+            head_row = await SupabaseHelper.get_user_row_by_firebase_uid(update_data["head_id"])
+            if not head_row:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Head user not found")
+            update_data["head_id"] = str(head_row["id"])
+        update_data["updated_at"] = datetime.utcnow().isoformat()
+
+        response = supabase.table("departments").update(update_data).eq("id", department_id).execute()
+        updated = response.data[0] if response.data else None
+        if not updated:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update department")
+
+        user_map = await SupabaseHelper.get_public_user_map()
+        result = await _department_to_public(updated, user_map)
+
         log_audit_event(
             actor_id=current_user.get("uid"),
             actor_name=current_user.get("name"),
             actor_email=current_user.get("email"),
             module="organization",
             action="department_updated",
-            description=(
-                f"{current_user.get('name', 'Someone')} updated department "
-                f"\"{result.get('name')}\"."
-            ),
+            description=f"{current_user.get('name', 'Someone')} updated department \"{result.get('name')}\".",
             result="success",
             target_type="department",
             target_id=department_id,
-            metadata={
-                "updated_fields": list(update_data.keys()),
-                "name": result.get("name"),
-                "head_id": result.get("head_id")
-            }
+            metadata={"updated_fields": list(update_data.keys()), "name": result.get("name"), "head_id": result.get("head_id")},
         )
-        
+
         return result
-        
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error updating department: {str(e)}"
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error updating department: {str(e)}")
 
 
 @router.delete("/{department_id}")
 async def delete_department(
     department_id: str,
-    current_user: dict = Depends(require_role("director"))
+    current_user: dict = Depends(require_role("hr", "director")),
 ):
-    """Delete a department - Directors only"""
     try:
-        doc_ref = db.collection('departments').document(department_id)
-        doc = doc_ref.get()
-        
-        if not doc.exists:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Department not found"
-            )
-        
-        dept_data = doc.to_dict()
-        
-        # Check if department has employees
-        employees = db.collection('users').where('department', '==', dept_data['name']).limit(1).stream()
-        if any(employees):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete department with existing employees. Please reassign them first."
-            )
-        
-        doc_ref.delete()
+        existing_resp = supabase.table("departments").select("*").eq("id", department_id).execute()
+        if not existing_resp.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
 
-        # Audit log - department deleted
+        dept_data = existing_resp.data[0]
+        supabase.table("departments").delete().eq("id", department_id).execute()
+
         log_audit_event(
             actor_id=current_user.get("uid"),
             actor_name=current_user.get("name"),
             actor_email=current_user.get("email"),
             module="organization",
             action="department_deleted",
-            description=(
-                f"{current_user.get('name', 'Someone')} deleted department "
-                f"\"{dept_data.get('name')}\"."
-            ),
+            description=f"{current_user.get('name', 'Someone')} deleted department \"{dept_data.get('name')}\".",
             result="success",
             target_type="department",
             target_id=department_id,
-            metadata={
-                "name": dept_data.get("name")
-            }
+            metadata={"name": dept_data.get("name"), "head_id": dept_data.get("head_id")},
         )
-        
+
         return {"message": "Department deleted successfully"}
-        
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error deleting department: {str(e)}"
-        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error deleting department: {str(e)}")

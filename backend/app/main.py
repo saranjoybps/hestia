@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.routes import users, attendance, leaves, tasks, performance, announcements, reports, departments, letters, onboarding, shifts, audit_logs
-import re
 
 settings = get_settings()
 
@@ -12,29 +11,6 @@ app = FastAPI(
     description=settings.api_description,
     version=settings.api_version
 )
-
-# Dynamic CORS origin matcher
-def is_allowed_origin(origin: str) -> bool:
-    """Check if origin matches allowed patterns"""
-    if not origin:
-        return False
-    
-    # Exact matches
-    exact_origins = [
-        "http://localhost:3000",
-        "http://localhost:3005",
-        "http://localhost:8000"
-    ]
-    if origin in exact_origins:
-        return True
-    
-    # Pattern matches
-    patterns = [
-        r'^https://.*\.vercel\.app$',
-        r'^https://.*\.onrender\.com$',
-        r'^https://hr\.joyrts\.com$'
-    ]
-    return any(re.match(pattern, origin) for pattern in patterns)
 
 # Configure CORS with regex support
 app.add_middleware(

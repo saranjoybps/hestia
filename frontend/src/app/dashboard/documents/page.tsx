@@ -37,6 +37,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { LoadingState } from '@/components/common/LoadingState';
 import { 
   FileText,
   Plus,
@@ -497,7 +498,9 @@ export default function ExitLettersPage() {
                 <CardDescription>Track all letter requests you've created</CardDescription>
               </CardHeader>
               <CardContent>
-                {requests.length > 0 ? (
+                {loading && requests.length === 0 && pendingRequests.length === 0 && issuedLetters.length === 0 ? (
+                  <LoadingState label="Loading letter requests" />
+                ) : requests.length > 0 ? (
                   <div className="border rounded-lg overflow-hidden">
                     <Table>
                       <TableHeader>
@@ -571,7 +574,9 @@ export default function ExitLettersPage() {
                 <CardDescription>Review and approve letter requests</CardDescription>
               </CardHeader>
               <CardContent>
-                {pendingRequests.length > 0 ? (
+                {loading && requests.length === 0 && pendingRequests.length === 0 && issuedLetters.length === 0 ? (
+                  <LoadingState label="Loading approvals" />
+                ) : pendingRequests.length > 0 ? (
                   <div className="space-y-4">
                     {pendingRequests.map((request) => (
                       <Card key={request.id} className="border-yellow-200">
@@ -665,13 +670,15 @@ export default function ExitLettersPage() {
 
         {/* Issued Letters Tab */}
         <TabsContent value="issued" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Issued Letters</CardTitle>
-              <CardDescription>Download approved letters</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {issuedLetters.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Issued Letters</CardTitle>
+                <CardDescription>Download approved letters</CardDescription>
+              </CardHeader>
+              <CardContent>
+              {loading && requests.length === 0 && pendingRequests.length === 0 && issuedLetters.length === 0 ? (
+                <LoadingState label="Loading issued letters" />
+              ) : issuedLetters.length > 0 ? (
                 <div className="border rounded-lg overflow-hidden">
                   <Table>
                     <TableHeader>

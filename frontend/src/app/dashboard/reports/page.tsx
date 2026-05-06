@@ -27,6 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { LoadingState } from '@/components/common/LoadingState';
 import { 
   BarChart3,
   Download,
@@ -276,6 +277,10 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6">
+      {loading && attendanceReports.length === 0 && leaveReports.length === 0 && performanceMetrics.length === 0 && employeeMetrics.length === 0 ? (
+        <LoadingState label="Loading reports" />
+      ) : (
+        <>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -772,6 +777,8 @@ export default function ReportsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+        </>
+      )}
     </div>
   );
 }

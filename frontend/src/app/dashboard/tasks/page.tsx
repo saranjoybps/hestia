@@ -41,6 +41,7 @@ import {
   GripVertical
 } from 'lucide-react';
 import { format, isPast, parseISO } from 'date-fns';
+import { LoadingState } from '@/components/common/LoadingState';
 
 interface Task {
   id: string;
@@ -116,6 +117,7 @@ export default function TasksPage() {
   }, [user, canCreate, userData?.uid]);
 
   const fetchTasks = async () => {
+    setLoading(true);
     try {
       const token = await user?.getIdToken();
       const response = await fetch(`${API_BASE_URL}/tasks`, {
@@ -128,6 +130,8 @@ export default function TasksPage() {
       }
     } catch (error) {
       console.error('Error fetching tasks:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -181,6 +185,7 @@ export default function TasksPage() {
         },
         body: JSON.stringify({
           ...formData,
+          dueDate: formData.dueDate || null,
           assigneeName: assignee.name,
           assigneeEmail: assignee.email,
           createdBy: userData?.uid,
@@ -215,6 +220,7 @@ export default function TasksPage() {
 
       // Get assignee details if changed
       let updateData: any = { ...formData };
+      updateData.dueDate = formData.dueDate || null;
       if (formData.assigneeId !== editingTask.assigneeId) {
         const assignee = employees.find(e => e.uid === formData.assigneeId);
         if (assignee) {
@@ -519,7 +525,10 @@ export default function TasksPage() {
       </div>
 
       {/* Kanban Board */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {loading && tasks.length === 0 ? (
+        <LoadingState label="Loading tasks" />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {columns.map((column) => {
           const columnTasks = getTasksByStatus(column.id);
           const Icon = column.icon;
@@ -561,7 +570,8 @@ export default function TasksPage() {
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
 
       {/* Create/Edit Task Dialog */}
       <Sheet open={showCreateDialog || showEditDialog} onOpenChange={(open) => {

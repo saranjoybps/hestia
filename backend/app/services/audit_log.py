@@ -1,7 +1,11 @@
 import threading
 from datetime import datetime
 from typing import Optional, Any
-from app.dependencies import db
+from uuid import uuid4
+
+from fastapi.encoders import jsonable_encoder
+
+from app.dependencies import supabase
 
 
 def log_audit_event(
@@ -17,11 +21,19 @@ def log_audit_event(
     target_id: Optional[str] = None,
     metadata: Optional[dict[str, Any]] = None
 ) -> tuple[str, dict[str, Any]]:
-    """Create an audit log entry asynchronously (fire-and-forget) to avoid blocking the response."""
-    # Generate the document reference locally — no API call yet
-    doc_ref = db.collection("audit_logs").document()
+    """Create an audit log entry asynchronously."""
+    resolved_actor_id = actor_id
+    try:
+        lookup = supabase.table("users").select("id").eq("firebase_uid", actor_id).execute()
+        if lookup.data and lookup.data[0].get("id"):
+            resolved_actor_id = str(lookup.data[0]["id"])
+    except Exception:
+        pass
+
+    doc_id = str(uuid4())
     audit_doc: dict[str, Any] = {
-        "actor_id": actor_id,
+        "id": doc_id,
+        "actor_id": resolved_actor_id,
         "actor_name": actor_name,
         "actor_email": actor_email,
         "module": module,
@@ -30,16 +42,15 @@ def log_audit_event(
         "result": result,
         "target_type": target_type,
         "target_id": target_id,
-        "metadata": metadata,
-        "created_at": datetime.utcnow().isoformat()
+        "metadata": metadata or {},
+        "created_at": datetime.utcnow().isoformat(),
     }
 
-    # Write in a background thread so the API response is not blocked
     def _write():
         try:
-            doc_ref.set(audit_doc)
+            supabase.table("audit_logs").insert(jsonable_encoder(audit_doc)).execute()
         except Exception:
-            pass  # Audit log failures must never affect the main response
+            pass
 
     threading.Thread(target=_write, daemon=True).start()
-    return doc_ref.id, audit_doc
+    return doc_id, audit_doc

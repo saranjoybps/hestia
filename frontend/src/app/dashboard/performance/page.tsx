@@ -36,6 +36,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { LoadingState } from '@/components/common/LoadingState';
 import {
   Plus,
   Star,
@@ -143,6 +144,7 @@ export default function PerformancePage() {
   }, [user, canAccess, canCreateReview, canApprove, isHR]);
 
   const fetchReviews = async () => {
+    setLoading(true);
     try {
       const token = await user?.getIdToken();
       const response = await fetch(`${API_BASE_URL}/performance`, {
@@ -155,6 +157,8 @@ export default function PerformancePage() {
       }
     } catch (error) {
       console.error('Error fetching reviews:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -446,7 +450,9 @@ export default function PerformancePage() {
               <CardDescription>Complete history of performance reviews</CardDescription>
             </CardHeader>
             <CardContent>
-              {reviews.length > 0 ? (
+              {loading && reviews.length === 0 ? (
+                <LoadingState label="Loading performance reviews" />
+              ) : reviews.length > 0 ? (
                 <div className="border rounded-lg overflow-hidden">
                   <Table>
                     <TableHeader>
