@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidateTag } from 'next/cache';
+import { updateTag } from 'next/cache';
 import { cookies } from 'next/headers';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
@@ -38,7 +38,7 @@ export async function createEmployee(form: FormData) {
     status: 'active',
   };
   await fetchJson(`/users/register`, { method: 'POST', body: JSON.stringify(payload) });
-  revalidateTag('employees');
+  updateTag('employees');
 }
 
 export async function updateEmployee(uid: string, form: FormData) {
@@ -54,22 +54,22 @@ export async function updateEmployee(uid: string, form: FormData) {
     lead_id: null,
   };
   await fetchJson(`/users/${uid}`, { method: 'PUT', body: JSON.stringify(payload) });
-  revalidateTag('employees');
+  updateTag('employees');
 }
 
 export async function deactivateEmployee(uid: string) {
   await fetchJson(`/users/${uid}`, { method: 'DELETE' });
-  revalidateTag('employees');
+  updateTag('employees');
 }
 
 export async function activateEmployee(uid: string) {
   await fetchJson(`/users/${uid}/activate`, { method: 'POST' });
-  revalidateTag('employees');
+  updateTag('employees');
 }
 
 export async function approveRequest(id: string) {
   await fetchJson(`/onboarding/requests/${id}/approve`, { method: 'PATCH' });
-  revalidateTag('employees');
+  updateTag('employees');
 }
 
 export async function rejectRequest(id: string, reason: string) {
@@ -77,10 +77,10 @@ export async function rejectRequest(id: string, reason: string) {
     method: 'PATCH',
     body: JSON.stringify({ rejection_reason: reason }),
   });
-  revalidateTag('employees');
+  updateTag('employees');
 }
 
 export async function deleteRequest(id: string) {
   await fetchJson(`/onboarding/requests/${id}`, { method: 'DELETE' });
-  revalidateTag('employees');
+  updateTag('employees');
 }

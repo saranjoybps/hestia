@@ -63,7 +63,7 @@ export function CreateEmployeeDialog({
     name: '',
     lastName: '',
     password: '',
-    role: 'employee' as const,
+    role: 'employee' as string,
     department: '',
     designation: '',
     phone: '',

@@ -14,6 +14,7 @@ interface UserData {
   designation?: string;
   phone?: string;
   dateOfJoining?: string;
+  date_of_joining?: string;
   status: 'active' | 'inactive';
   manager_id?: string;
   lead_id?: string;
