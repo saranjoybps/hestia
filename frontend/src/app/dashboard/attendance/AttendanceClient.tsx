@@ -54,7 +54,7 @@ export default function AttendanceClient({ initialData }: { initialData: Attenda
   const [isSelfRequest, setIsSelfRequest] = useState(false);
   const [selfRequestDate, setSelfRequestDate] = useState(yesterdayLocal());
   const [editing, setEditing] = useState<AttendanceRecord | null>(null);
-  const [selectedEmployee, setSelectedEmployee] = useState<RosterRow | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [form, setForm] = useState({ status: 'present', check_in: '', check_out: '', reason: '' });
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
