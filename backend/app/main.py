@@ -15,6 +15,10 @@ app = FastAPI(
 # Configure CORS with regex support
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=[
+        "https://joyhr-web.vercel.app",
+        "https://joyhr-api.vercel.app",
+    ],
     allow_origin_regex=r"(http://localhost:\d+|https://.*\.vercel\.app|https://.*\.onrender\.com|https://hr\.joyrts\.com)",
     allow_credentials=True,
     allow_methods=["*"],
