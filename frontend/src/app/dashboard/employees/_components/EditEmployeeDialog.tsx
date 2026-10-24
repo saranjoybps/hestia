@@ -66,7 +66,7 @@ export function EditEmployeeDialog({
     email: '',
     name: '',
     lastName: '',
-    role: 'employee' as const,
+    role: 'employee' as string,
     department: '',
     designation: '',
     phone: '',
