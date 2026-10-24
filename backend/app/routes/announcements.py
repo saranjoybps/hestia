@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -17,8 +17,9 @@ class PinRequest(BaseModel):
     isPinned: bool
 
 
-async def _announcement_to_public(row: Dict[str, Any]) -> Dict[str, Any]:
-    creator = await SupabaseHelper.get_public_user_by_id(row.get("created_by")) if row.get("created_by") else None
+async def _announcement_to_public(row: Dict[str, Any], user_map: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
+    user_map = user_map if user_map is not None else await SupabaseHelper.get_public_user_map()
+    creator = user_map.get(str(row.get("created_by"))) if row.get("created_by") else None
     return {
         "id": str(row.get("id")),
         "title": row.get("title"),
@@ -42,13 +43,15 @@ async def _current_internal_user_id(firebase_uid: str) -> Optional[str]:
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_announcement(
     announcement_data: AnnouncementCreate,
-    current_user: dict = Depends(require_role("director", "hr", "manager", "lead")),
+    current_user: dict = Depends(require_role("director", "hr", "manager", "lead", "super_admin")),
 ):
     try:
         creator_row = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
         if not creator_row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Current user not found")
 
+        if not announcement_data.title.strip() or not announcement_data.description.strip():
+            raise HTTPException(status_code=422, detail="Title and description are required")
         announcement_row = {
             "title": announcement_data.title,
             "content": announcement_data.description,
@@ -104,24 +107,25 @@ async def list_announcements(
         user_role = current_user.get("role")
         user_dept = current_user.get("department")
 
-        query = supabase.table("announcements").select("*")
-        if status:
-            query = query.eq("status", status)
-        elif user_role not in ["hr", "director"]:
-            query = query.eq("status", "published")
-
-        resp = query.order("created_at", desc=True).execute()
+        # The public feed never returns drafts, even if a client asks for them.
+        resp = supabase.table("announcements").select("*").eq("status", "published").order("created_at", desc=True).execute()
         rows = resp.data or []
+        user_map = await SupabaseHelper.get_public_user_map()
 
         public: List[Dict[str, Any]] = []
         for row in rows:
-            announcement = await _announcement_to_public(row)
+            announcement = await _announcement_to_public(row, user_map)
             if priority and announcement.get("priority") != priority:
                 continue
+            expiry = announcement.get("expiryDate")
+            if expiry and str(expiry)[:10] < date.today().isoformat():
+                continue
             target_audience = announcement.get("targetAudience") or []
-            if not target_audience or "All Departments" in target_audience or "All Roles" in target_audience:
+            role_label = {"super_admin": "Super Admin", "hr": "HR"}.get(str(user_role), str(user_role or "").replace("_", " ").title())
+            audience = {str(value).strip().casefold() for value in target_audience}
+            if not audience or "all departments" in audience or "all roles" in audience:
                 public.append(announcement)
-            elif user_dept in target_audience or user_role.capitalize() in target_audience:
+            elif str(user_dept or "").strip().casefold() in audience or role_label.casefold() in audience:
                 public.append(announcement)
 
         public.sort(key=lambda x: (not x.get("isPinned", False), x.get("createdAt", "")), reverse=True)
@@ -131,14 +135,15 @@ async def list_announcements(
 
 
 @router.get("/my-announcements")
-async def get_my_announcements(current_user: dict = Depends(require_role("director", "hr", "manager", "lead"))):
+async def get_my_announcements(current_user: dict = Depends(require_role("director", "hr", "manager", "lead", "super_admin"))):
     try:
         creator_row = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
         if not creator_row:
             return []
         resp = supabase.table("announcements").select("*").eq("created_by", str(creator_row["id"])).order("created_at", desc=True).execute()
         rows = resp.data or []
-        return [await _announcement_to_public(row) for row in rows]
+        user_map = await SupabaseHelper.get_public_user_map()
+        return [await _announcement_to_public(row, user_map) for row in rows]
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error fetching my announcements: {str(e)}")
 
@@ -149,7 +154,17 @@ async def get_announcement(announcement_id: str, current_user: dict = Depends(ge
         response = supabase.table("announcements").select("*").eq("id", announcement_id).single().execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Announcement not found")
-        return await _announcement_to_public(response.data)
+        row = response.data
+        owns = str(row.get("created_by")) == str(await _current_internal_user_id(current_user.get("uid")))
+        if row.get("status") != "published" and not (owns or current_user.get("role") in {"hr", "director", "super_admin"}):
+            raise HTTPException(status_code=404, detail="Announcement not found")
+        if row.get("status") == "published":
+            target = row.get("target_audience") or []
+            target_keys = {str(value).strip().casefold() for value in target}
+            role = {"super_admin": "Super Admin", "hr": "HR"}.get(str(current_user.get("role")), str(current_user.get("role", "")).replace("_", " ").title())
+            if target_keys and "all departments" not in target_keys and "all roles" not in target_keys and str(current_user.get("department", "")).casefold() not in target_keys and role.casefold() not in target_keys:
+                raise HTTPException(status_code=404, detail="Announcement not found")
+        return await _announcement_to_public(row)
     except HTTPException:
         raise
     except Exception as e:
@@ -160,7 +175,7 @@ async def get_announcement(announcement_id: str, current_user: dict = Depends(ge
 async def update_announcement(
     announcement_id: str,
     announcement_update: AnnouncementUpdate,
-    current_user: dict = Depends(require_role("director", "hr", "manager", "lead")),
+    current_user: dict = Depends(require_role("director", "hr", "manager", "lead", "super_admin")),
 ):
     try:
         current_row = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
@@ -172,7 +187,7 @@ async def update_announcement(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Announcement not found")
 
         announcement_data = announcement_resp.data[0]
-        if str(announcement_data.get("created_by")) != str(current_row["id"]):
+        if str(announcement_data.get("created_by")) != str(current_row["id"]) and current_user.get("role") not in {"hr", "director", "super_admin"}:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only edit your own announcements")
 
         update_data = announcement_update.model_dump(exclude_unset=True)
@@ -228,12 +243,16 @@ async def update_announcement(
 async def toggle_pin_announcement(
     announcement_id: str,
     pin_data: PinRequest,
-    current_user: dict = Depends(require_role("director", "hr", "manager", "lead")),
+    current_user: dict = Depends(require_role("director", "hr", "manager", "lead", "super_admin")),
 ):
     try:
         response = supabase.table("announcements").select("*").eq("id", announcement_id).execute()
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Announcement not found")
+
+        current_row = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
+        if str(response.data[0].get("created_by")) != str((current_row or {}).get("id")) and current_user.get("role") not in {"hr", "director", "super_admin"}:
+            raise HTTPException(status_code=403, detail="You can only pin your own announcements")
 
         update_resp = supabase.table("announcements").update(jsonable_encoder({
             "is_pinned": pin_data.isPinned,
@@ -269,7 +288,7 @@ async def toggle_pin_announcement(
 @router.delete("/{announcement_id}")
 async def delete_announcement(
     announcement_id: str,
-    current_user: dict = Depends(require_role("director", "hr", "manager", "lead")),
+        current_user: dict = Depends(require_role("director", "hr", "manager", "lead", "super_admin")),
 ):
     try:
         current_row = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
@@ -281,7 +300,7 @@ async def delete_announcement(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Announcement not found")
 
         announcement_data = response.data[0]
-        if str(announcement_data.get("created_by")) != str(current_row["id"]):
+        if str(announcement_data.get("created_by")) != str(current_row["id"]) and current_user.get("role") not in {"hr", "director", "super_admin"}:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own announcements")
 
         log_audit_event(

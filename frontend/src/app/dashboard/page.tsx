@@ -1,337 +1,150 @@
-'use client';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
+import DashboardClient, { type DashboardPageData } from './DashboardClient';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+export const dynamic = 'force-dynamic';
 
-import { useAuth } from '@/contexts/AuthContext';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Users, Calendar, FileText, TrendingUp, Loader2, RefreshCw } from 'lucide-react';
-import { useState, useEffect } from 'react';
-import { format } from 'date-fns';
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+const ORG_WIDE_ROLES = new Set(['hr', 'director', 'super_admin']);
+const APPROVER_ROLES = new Set(['lead', 'manager', 'hr', 'director', 'super_admin']);
 
-interface DashboardStats {
-  totalEmployees: number;
-  presentToday: number;
-  attendancePercentage: number;
-  pendingLeaves: number;
-  totalDepartments: number;
+async function getApiData<T>(path: string, token: string): Promise<T | null> {
+  try {
+    const response = await fetch(`${API}${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (!response.ok) return null;
+    return await response.json() as T;
+  } catch {
+    return null;
+  }
 }
 
-interface Announcement {
-  id: string;
-  title: string;
-  description: string;
-  createdAt: string;
-  createdByName: string;
-  priority: string;
-  status: string;
-  expiryDate?: string;
+function indiaDateParts(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date);
+  return Object.fromEntries(parts.map((part) => [part.type, part.value]));
 }
 
-export default function DashboardPage() {
-  const { userData, user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [stats, setStats] = useState<DashboardStats>({
-    totalEmployees: 0,
-    presentToday: 0,
-    attendancePercentage: 0,
-    pendingLeaves: 0,
-    totalDepartments: 0,
-  });
-  const [recentAnnouncements, setRecentAnnouncements] = useState<Announcement[]>([]);
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+function dateLabel(value?: string) {
+  if (!value) return 'Recently';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Recently';
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric',
+  }).format(date);
+}
 
-  useEffect(() => {
-    if (user) {
-      fetchDashboardData();
+export default async function DashboardPage() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get('hestia_session')?.value || cookieStore.get('joyhr_session')?.value;
+  if (!token) redirect('/login');
+
+  const me = await getApiData<{ uid: string; name?: string; role: string; department?: string; status?: string }>('/users/me', token);
+  if (!me?.uid) redirect('/login');
+  const role = String(me.role || 'employee').toLowerCase();
+  const todayParts = indiaDateParts(new Date());
+  const today = `${todayParts.year}-${todayParts.month}-${todayParts.day}`;
+
+  const departmentPath = ORG_WIDE_ROLES.has(role)
+    ? '/departments'
+    : role === 'lead' || role === 'manager'
+      ? '/reports/departments'
+      : null;
+  const pendingPath = APPROVER_ROLES.has(role) ? '/leaves/pending-approvals' : '/leaves?status=pending';
+
+  const [attendance, pendingLeaves, announcementRows, departmentData] = await Promise.all([
+    getApiData<any>(`/attendance/dashboard?start_date=${today}&end_date=${today}&day=${today}`, token),
+    getApiData<any[]>(pendingPath, token),
+    getApiData<any[]>('/announcements', token),
+    departmentPath ? getApiData<any>(departmentPath, token) : Promise.resolve(null),
+  ]);
+
+  const team = Array.isArray(attendance?.team) ? attendance.team : [];
+  const people = new Map<string, any>();
+  if (me.status !== 'inactive') people.set(me.uid, me);
+  for (const person of team) {
+    if (person?.uid && person.status !== 'inactive') people.set(String(person.uid), person);
+  }
+
+  const roster = Array.isArray(attendance?.roster) ? attendance.roster : [];
+  const attendanceByUid = new Map<string, any>();
+  for (const row of attendance?.records || []) {
+    if (row?.userId) attendanceByUid.set(String(row.userId), row);
+  }
+  for (const person of roster) {
+    if (person?.uid && person.attendance) attendanceByUid.set(String(person.uid), person.attendance);
+  }
+  if (me.uid && attendance?.selfRecord) attendanceByUid.set(me.uid, attendance.selfRecord);
+
+  const scheduled: string[] = roster
+    .filter((person: any) => person?.uid && person.shift)
+    .map((person: any) => String(person.uid));
+  if (me.uid && attendance?.selfShift) scheduled.push(me.uid);
+  const uniqueScheduled = [...new Set(scheduled)];
+  let presentToday = 0;
+  let halfDayToday = 0;
+  let attendanceWeight = 0;
+  let attendanceDenominator = 0;
+  for (const uid of uniqueScheduled) {
+    const row = attendanceByUid.get(uid);
+    const status = row?.status;
+    if (status === 'on-leave' || status === 'week-off' || status === 'holiday' || row?.isLeaveDerived) continue;
+    attendanceDenominator += 1;
+    if ((row?.approvalStatus || 'approved') !== 'approved') continue;
+    if (status === 'present') {
+      presentToday += 1;
+      attendanceWeight += 1;
+    } else if (status === 'half-day' || status === 'half_day') {
+      halfDayToday += 1;
+      attendanceWeight += 0.5;
     }
-  }, [user]);
+  }
 
-  const fetchDashboardData = async () => {
-    // Only show loading spinner on initial load, use refreshing for subsequent updates
-    if (stats.totalEmployees === 0) {
-      setLoading(true);
-    } else {
-      setRefreshing(true);
-    }
+  const departmentList = Array.isArray(departmentData?.departments) ? departmentData.departments : [];
+  const ownDepartmentCount = me.department ? 1 : 0;
+  const totalDepartments = departmentData ? departmentList.length : ownDepartmentCount;
+  const announcements = (Array.isArray(announcementRows) ? announcementRows : [])
+    .slice(0, 3)
+    .map((announcement: any) => ({
+      id: String(announcement.id),
+      title: String(announcement.title || 'Announcement'),
+      description: announcement.description ? String(announcement.description) : '',
+      createdAt: announcement.createdAt ? String(announcement.createdAt) : undefined,
+      createdAtLabel: dateLabel(announcement.createdAt),
+      priority: String(announcement.priority || 'medium'),
+    }));
 
-    try {
-      const token = await user?.getIdToken();
-      const today = format(new Date(), 'yyyy-MM-dd');
-      const timestamp = Date.now(); // Cache buster
+  const lastUpdated = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true,
+  }).format(new Date());
+  const scopeDescription = ORG_WIDE_ROLES.has(role)
+    ? 'Active people across the organization'
+    : role === 'lead' || role === 'manager'
+      ? 'You and active people in your reporting scope'
+      : 'Your account';
+  const pendingLeavesDescription = APPROVER_ROLES.has(role)
+    ? 'Requests in your approval queue'
+    : 'Your requests awaiting review';
 
-      // Fetch all data in parallel with optimized limits and cache busting
-      const [usersRes, attendanceRes, leavesRes, announcementsRes, departmentsRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/users?page=1&limit=10&_t=${timestamp}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache'
-          },
-        }),
-        fetch(`${API_BASE_URL}/attendance?start_date=${today}&end_date=${today}&_t=${timestamp}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache'
-          },
-        }),
-        fetch(`${API_BASE_URL}/leaves?status=pending&page=1&limit=10&_t=${timestamp}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache'
-          },
-        }),
-        fetch(`${API_BASE_URL}/announcements?status=published&_t=${timestamp}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache'
-          },
-        }),
-        fetch(`${API_BASE_URL}/departments?_t=${timestamp}`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache'
-          },
-        }),
-      ]);
-
-      const usersData = await usersRes.json();
-      const attendanceData = await attendanceRes.json();
-      const leavesData = await leavesRes.json();
-      const announcementsData = await announcementsRes.json();
-      const departmentsData = await departmentsRes.json();
-
-      // Calculate stats
-      const totalEmployees = usersData.total || usersData.users?.length || 0;
-
-      // attendanceData can be array directly; statuses come back as 'present','half_day',etc.
-      const attendanceArray: any[] = Array.isArray(attendanceData)
-        ? attendanceData
-        : Array.isArray(attendanceData.attendance)
-          ? attendanceData.attendance
-          : [];
-
-      const presentCount = attendanceArray.filter((a: any) =>
-        a.status === 'present' || a.status === 'half-day' || a.status === 'half_day'
-      ).length;
-
-      const attendancePercentage = totalEmployees > 0
-        ? (presentCount / totalEmployees) * 100
-        : 0;
-
-      // pending leaves count: leavesData usually returns an array (list_leaves)
-      const pendingLeavesCount = Array.isArray(leavesData)
-        ? leavesData.length
-        : leavesData.total || leavesData.leaves?.length || 0;
-
-      setStats({
-        totalEmployees,
-        presentToday: presentCount,
-        attendancePercentage,
-        pendingLeaves: pendingLeavesCount,
-        totalDepartments: departmentsData.departments?.length || 0,
-      });
-
-      // Get recent announcements (published only)
-      const announcements = Array.isArray(announcementsData) ? announcementsData : (announcementsData.announcements || []);
-
-      const publishedAnnouncements = announcements
-        .filter((a: Announcement) => {
-          console.log(a.title, 'expiryDate:', a.expiryDate, 'today:', today); // 👈 debug
-          return a.status === 'published' && (!a.expiryDate || a.expiryDate >= today);
-        })
-        .sort((a: Announcement, b: Announcement) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        )
-        .slice(0, 3);
-      setRecentAnnouncements(publishedAnnouncements);
-
-      // Update last refresh time
-      setLastRefresh(new Date());
-
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  const initialData: DashboardPageData = {
+    stats: {
+      peopleInScope: people.size,
+      presentToday,
+      halfDayToday,
+      attendancePercentage: attendanceDenominator ? attendanceWeight / attendanceDenominator * 100 : 0,
+      pendingLeaves: Array.isArray(pendingLeaves) ? pendingLeaves.length : 0,
+      totalDepartments,
+    },
+    role,
+    scopeDescription,
+    pendingLeavesDescription,
+    announcements,
+    lastUpdated,
+    hasPartialData: !attendance || !pendingLeaves || !announcementRows || (!!departmentPath && !departmentData),
   };
 
-  const getTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
-    if (seconds < 60) return 'Just now';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-    const days = Math.floor(hours / 24);
-    return `${days} day${days > 1 ? 's' : ''} ago`;
-  };
-
-  const dashboardCards = [
-    {
-      title: 'Total Employees',
-      value: loading ? '...' : stats.totalEmployees.toString(),
-      icon: Users,
-      description: 'Active employees',
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50',
-    },
-    {
-      title: 'Present Today',
-      value: loading ? '...' : stats.presentToday.toString(),
-      icon: Calendar,
-      description: loading ? 'Loading...' : `${stats.attendancePercentage.toFixed(1)}% attendance`,
-      color: 'text-green-600',
-      bgColor: 'bg-green-50',
-    },
-    {
-      title: 'Pending Leaves',
-      value: loading ? '...' : stats.pendingLeaves.toString(),
-      icon: FileText,
-      description: 'Require approval',
-      color: 'text-yellow-600',
-      bgColor: 'bg-yellow-50',
-    },
-    {
-      title: 'Departments',
-      value: loading ? '...' : stats.totalDepartments.toString(),
-      icon: TrendingUp,
-      description: 'Active departments',
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-50',
-    },
-  ];
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-500 mt-1">
-            Overview of your HR management system
-          </p>
-          <p className="text-xs text-gray-400 mt-1">
-            Last updated: {format(lastRefresh, 'MMM dd, yyyy HH:mm:ss')} • Click Refresh to update
-          </p>
-        </div>
-        <Button
-          onClick={() => fetchDashboardData()}
-          disabled={loading || refreshing}
-          variant="outline"
-          size="sm"
-          className="gap-2"
-        >
-          <RefreshCw className={`h-4 w-4 ${(loading || refreshing) ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {dashboardCards.map((stat, index) => {
-          const Icon = stat.icon;
-          return (
-            <Card key={index}>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">
-                  {stat.title}
-                </CardTitle>
-                <div className={`p-2 rounded-lg ${stat.bgColor}`}>
-                  <Icon className={`h-5 w-5 ${stat.color}`} />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
-                <p className="text-xs text-gray-500 mt-1">{stat.description}</p>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Announcements</CardTitle>
-            <CardDescription>Latest updates from management</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-              </div>
-            ) : recentAnnouncements.length > 0 ? (
-              <div className="space-y-4">
-                {recentAnnouncements.map((announcement) => (
-                  <div key={announcement.id} className="flex items-start gap-3">
-                    <div className={`h-2 w-2 rounded-full mt-2 ${announcement.priority === 'urgent' ? 'bg-red-500' :
-                      announcement.priority === 'high' ? 'bg-orange-500' :
-                        announcement.priority === 'medium' ? 'bg-yellow-500' :
-                          'bg-blue-500'
-                      }`} />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{announcement.title}</p>
-                      <p className="text-xs text-gray-500">{getTimeAgo(announcement.createdAt)}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <p className="text-sm">No recent announcements</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Quick Stats</CardTitle>
-            <CardDescription>Overview of key metrics</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                <div>
-                  <p className="text-sm text-gray-600">Total Employees</p>
-                  <p className="text-2xl font-bold text-blue-600">
-                    {loading ? '...' : stats.totalEmployees}
-                  </p>
-                </div>
-                <Users className="h-8 w-8 text-blue-600" />
-              </div>
-              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                <div>
-                  <p className="text-sm text-gray-600">Present Today</p>
-                  <p className="text-2xl font-bold text-green-600">
-                    {loading ? '...' : `${stats.presentToday} (${stats.attendancePercentage.toFixed(0)}%)`}
-                  </p>
-                </div>
-                <Calendar className="h-8 w-8 text-green-600" />
-              </div>
-              <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                <div>
-                  <p className="text-sm text-gray-600">Pending Leave Requests</p>
-                  <p className="text-2xl font-bold text-yellow-600">
-                    {loading ? '...' : stats.pendingLeaves}
-                  </p>
-                </div>
-                <FileText className="h-8 w-8 text-yellow-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
+  return <DashboardClient initialData={initialData} />;
 }

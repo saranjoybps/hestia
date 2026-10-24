@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
-from app.routes import users, attendance, leaves, tasks, performance, announcements, reports, departments, letters, onboarding, shifts, audit_logs
+from app.routes import users, attendance, leaves, tasks, performance, announcements, reports, departments, letters, onboarding, shifts, audit_logs, candidates, assets
 
 settings = get_settings()
 
@@ -34,12 +34,14 @@ app.include_router(letters.router, prefix="/api")
 app.include_router(onboarding.router, prefix="/api")
 app.include_router(shifts.router, prefix="/api")
 app.include_router(audit_logs.router, prefix="/api")
+app.include_router(candidates.router, prefix="/api")
+app.include_router(assets.router, prefix="/api")
 
 @app.get("/")
 async def root():
     """Root endpoint"""
     return {
-        "message": "JoyHR API",
+        "message": "Hestia API",
         "version": settings.api_version,
         "docs": "/docs"
     }

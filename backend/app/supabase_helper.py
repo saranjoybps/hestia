@@ -144,15 +144,18 @@ class SupabaseHelper:
         page: int = 1,
         limit: int = 100,
     ) -> Dict[str, Any]:
-        users = await SupabaseHelper.get_all_public_users()
-
-        if department:
-            users = [u for u in users if u.get("department") == department]
-        if status_filter:
-            users = [u for u in users if u.get("status") == status_filter]
-        if roles:
-            users = [u for u in users if u.get("role") in roles]
+        start = (page - 1) * limit
         if search:
+            # Keep the existing flexible name/email matching for free-text
+            # searches. The common unfiltered and status-tab paths use SQL
+            # filtering and pagination below.
+            users = await SupabaseHelper.get_all_public_users()
+            if department:
+                users = [u for u in users if u.get("department") == department]
+            if status_filter:
+                users = [u for u in users if u.get("status") == status_filter]
+            if roles:
+                users = [u for u in users if u.get("role") in roles]
             needle = search.lower()
             def matches(u: Dict[str, Any]) -> bool:
                 full_name = " ".join(part for part in [u.get("name"), u.get("last_name")] if part)
@@ -161,11 +164,19 @@ class SupabaseHelper:
                     for field in [u.get("name"), u.get("last_name"), full_name, u.get("email")]
                 )
             users = [u for u in users if matches(u)]
-
-        total = len(users)
-        start = (page - 1) * limit
-        end = start + limit
-        paginated = users[start:end]
+            total = len(users)
+            paginated = users[start:start + limit]
+        else:
+            query = supabase.table("users").select("*", count="exact")
+            if department:
+                query = query.eq("department", department)
+            if status_filter:
+                query = query.eq("status", status_filter)
+            if roles:
+                query = query.in_("role", roles)
+            response = query.order("created_at", desc=True).range(start, start + limit - 1).execute()
+            paginated = SupabaseHelper._public_users(response.data or [])
+            total = response.count or 0
         return {
             "users": paginated,
             "total": total,

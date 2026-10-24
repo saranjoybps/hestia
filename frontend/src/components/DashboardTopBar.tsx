@@ -1,7 +1,6 @@
 'use client';
 
 import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -12,13 +11,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Bell, Settings, LogOut, User, Moon, Sun } from 'lucide-react';
+import { LogOut, User } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 
 export default function DashboardTopBar() {
   const { userData, logout } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -42,6 +40,7 @@ export default function DashboardTopBar() {
   const getRoleBadgeColor = (role: string) => {
     const colors: Record<string, string> = {
       director: 'bg-purple-100 text-purple-800',
+      super_admin: 'bg-slate-900 text-white',
       hr: 'bg-blue-100 text-blue-800',
       manager: 'bg-green-100 text-green-800',
       lead: 'bg-yellow-100 text-yellow-800',
@@ -64,27 +63,6 @@ export default function DashboardTopBar() {
       </div>
       
       <div className="flex items-center gap-1 lg:gap-3">
-        {/* Dark Mode Toggle */}
-        <Button 
-          variant="ghost" 
-          size="icon"
-          onClick={toggleTheme}
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          className="h-8 w-8 lg:h-10 lg:w-10"
-        >
-          {theme === 'dark' ? (
-            <Sun className="h-4 w-4 lg:h-5 lg:w-5" />
-          ) : (
-            <Moon className="h-4 w-4 lg:h-5 lg:w-5" />
-          )}
-        </Button>
-
-        {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative h-8 w-8 lg:h-10 lg:w-10">
-          <Bell className="h-4 w-4 lg:h-5 lg:w-5" />
-          <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full" />
-        </Button>
-        
         {/* User Profile Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -112,10 +90,6 @@ export default function DashboardTopBar() {
             <DropdownMenuItem onClick={() => router.push('/dashboard/profile')}>
               <User className="mr-2 h-4 w-4" />
               My Profile
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push('/dashboard/settings')}>
-              <Settings className="mr-2 h-4 w-4" />
-              Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} className="text-red-600">

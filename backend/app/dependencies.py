@@ -61,13 +61,11 @@ def get_user_cached(uid: str) -> Optional[dict]:
 settings = get_settings()
 
 # Initialize Firebase Admin SDK
-# Check if Firebase credentials are provided via environment variable (for Render)
-if os.getenv('FIREBASE_CREDENTIALS'):
-    # Parse credentials from environment variable
-    firebase_creds = json.loads(os.getenv('FIREBASE_CREDENTIALS'))
+# Prefer inline JSON for deployment; keep the ignored local key file as a fallback.
+if settings.firebase_credentials:
+    firebase_creds = json.loads(settings.firebase_credentials)
     cred = credentials.Certificate(firebase_creds)
 else:
-    # Use credentials file (for local development)
     cred = credentials.Certificate(settings.firebase_credentials_path)
 
 firebase_admin.initialize_app(cred)

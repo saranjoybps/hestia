@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -20,8 +20,15 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   
-  const { login } = useAuth();
+  const { login, user, userData, loading: authLoading } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    // Firebase can restore a signed-in user before the server session cookie
+    // and backend profile are ready. Redirect only after /users/me succeeds;
+    // otherwise the dashboard guard and this page can bounce between routes.
+    if (!authLoading && user && userData) router.replace('/dashboard');
+  }, [authLoading, user, userData, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,15 +48,15 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">JoyHR</CardTitle>
+      <Card className="w-full max-w-xl">
+        <CardHeader className="space-y-2">
+          <CardTitle className="text-2xl font-bold text-center">Hestia</CardTitle>
           <CardDescription className="text-center">
             Sign in to your account to continue
           </CardDescription>
         </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-0">
+          <CardContent className="space-y-5 pb-0">
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>
@@ -69,13 +76,13 @@ export default function LoginPage() {
               />
             </div>
             
-                        <div className="space-y-2">
+            <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <div className="relative">
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -109,7 +116,7 @@ export default function LoginPage() {
             </div>
           </CardContent>
           
-          <CardFooter>
+          <CardFooter className="pt-0">
             <Button
               type="submit"
               className="w-full"

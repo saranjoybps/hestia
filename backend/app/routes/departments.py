@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.dependencies import get_current_user, supabase, require_role
+from app.dependencies import invalidate_user_cache, supabase, require_role
 from app.services.audit_log import log_audit_event
 from app.supabase_helper import SupabaseHelper
 
@@ -46,7 +46,7 @@ async def _department_to_public(row: Dict[str, Any], user_map: Dict[str, Dict[st
 @router.post("/")
 async def create_department(
     department: DepartmentCreate,
-    current_user: dict = Depends(require_role("hr", "director")),
+    current_user: dict = Depends(require_role("hr", "director", "super_admin")),
 ):
     try:
         existing = supabase.table("departments").select("id").eq("name", department.name).limit(1).execute()
@@ -100,7 +100,7 @@ async def create_department(
 
 
 @router.get("/")
-async def list_departments(current_user: dict = Depends(get_current_user)):
+async def list_departments(current_user: dict = Depends(require_role("hr", "director", "super_admin"))):
     try:
         dept_resp = supabase.table("departments").select("*").order("name").execute()
         departments_list = dept_resp.data or []
@@ -127,7 +127,7 @@ async def list_departments(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/{department_id}")
-async def get_department(department_id: str, current_user: dict = Depends(get_current_user)):
+async def get_department(department_id: str, current_user: dict = Depends(require_role("hr", "director", "super_admin"))):
     try:
         doc = supabase.table("departments").select("*").eq("id", department_id).single().execute()
         dept_data = doc.data if doc.data else None
@@ -157,7 +157,7 @@ async def get_department(department_id: str, current_user: dict = Depends(get_cu
 async def update_department(
     department_id: str,
     department: DepartmentUpdate,
-    current_user: dict = Depends(require_role("hr", "director")),
+    current_user: dict = Depends(require_role("hr", "director", "super_admin")),
 ):
     try:
         existing_resp = supabase.table("departments").select("*").eq("id", department_id).execute()
@@ -171,17 +171,28 @@ async def update_department(
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Department with this name already exists")
 
         update_data = {k: v for k, v in department.model_dump().items() if v is not None}
-        if "head_id" in update_data and update_data["head_id"]:
-            head_row = await SupabaseHelper.get_user_row_by_firebase_uid(update_data["head_id"])
-            if not head_row:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Head user not found")
-            update_data["head_id"] = str(head_row["id"])
+        if "head_id" in update_data:
+            if update_data["head_id"]:
+                head_row = await SupabaseHelper.get_user_row_by_firebase_uid(update_data["head_id"])
+                if not head_row:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Head user not found")
+                update_data["head_id"] = str(head_row["id"])
+            else:
+                update_data["head_id"] = None
         update_data["updated_at"] = datetime.utcnow().isoformat()
 
         response = supabase.table("departments").update(update_data).eq("id", department_id).execute()
         updated = response.data[0] if response.data else None
         if not updated:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update department")
+
+        previous_name = existing_resp.data[0].get("name")
+        if update_data.get("name") and update_data["name"] != previous_name:
+            assigned_users = supabase.table("users").select("firebase_uid").eq("department", previous_name).execute().data or []
+            supabase.table("users").update({"department": update_data["name"], "updated_at": datetime.utcnow().isoformat()}).eq("department", previous_name).execute()
+            for user_row in assigned_users:
+                if user_row.get("firebase_uid"):
+                    invalidate_user_cache(str(user_row["firebase_uid"]))
 
         user_map = await SupabaseHelper.get_public_user_map()
         result = await _department_to_public(updated, user_map)
@@ -209,7 +220,7 @@ async def update_department(
 @router.delete("/{department_id}")
 async def delete_department(
     department_id: str,
-    current_user: dict = Depends(require_role("hr", "director")),
+    current_user: dict = Depends(require_role("hr", "director", "super_admin")),
 ):
     try:
         existing_resp = supabase.table("departments").select("*").eq("id", department_id).execute()
@@ -217,6 +228,9 @@ async def delete_department(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
 
         dept_data = existing_resp.data[0]
+        assigned = supabase.table("users").select("id").eq("department", dept_data.get("name")).limit(1).execute().data or []
+        if assigned:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reassign this department's employees before deleting it")
         supabase.table("departments").delete().eq("id", department_id).execute()
 
         log_audit_event(

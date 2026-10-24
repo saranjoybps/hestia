@@ -47,7 +47,7 @@ async def list_audit_logs(
     to_date: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     limit: int = Query(100, ge=1, le=500),
-    current_user: dict = Depends(require_role("hr", "director")),
+    current_user: dict = Depends(require_role("hr", "director", "super_admin")),
 ):
     try:
         query = supabase.table("audit_logs").select("*")

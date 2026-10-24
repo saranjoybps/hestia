@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -23,11 +23,12 @@ class RejectionRequest(BaseModel):
     rejectionReason: str
 
 
-async def _review_to_public(row: Dict[str, Any]) -> Dict[str, Any]:
-    user = await SupabaseHelper.get_public_user_by_id(row.get("employee_id")) if row.get("employee_id") else None
-    reviewer = await SupabaseHelper.get_public_user_by_id(row.get("reviewer_id")) if row.get("reviewer_id") else None
-    approver = await SupabaseHelper.get_public_user_by_id(row.get("approved_by")) if row.get("approved_by") else None
-    rejected_by = await SupabaseHelper.get_public_user_by_id(row.get("rejected_by")) if row.get("rejected_by") else None
+async def _review_to_public(row: Dict[str, Any], user_map: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
+    user_map = user_map if user_map is not None else await SupabaseHelper.get_public_user_map()
+    user = user_map.get(str(row.get("employee_id"))) if row.get("employee_id") else None
+    reviewer = user_map.get(str(row.get("reviewer_id"))) if row.get("reviewer_id") else None
+    approver = user_map.get(str(row.get("approved_by"))) if row.get("approved_by") else None
+    rejected_by = user_map.get(str(row.get("rejected_by"))) if row.get("rejected_by") else None
     return {
         "id": str(row.get("id")),
         "userId": user.get("uid") if user else None,
@@ -54,6 +55,23 @@ async def _review_to_public(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+async def _can_view_review(current_user: Dict[str, Any], row: Dict[str, Any]) -> bool:
+    role = current_user.get("role")
+    if role in {"hr", "director", "super_admin"}:
+        return True
+    current = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
+    current_id = str((current or {}).get("id"))
+    if str(row.get("reviewer_id")) == current_id:
+        return True
+    if role in {"lead", "manager"}:
+        reportees = await SupabaseHelper.get_reportees(str(current_user.get("uid")))
+        ids = {str(value) for person in reportees for value in (person.get("uid"), person.get("id")) if value}
+        employee = await SupabaseHelper.get_public_user_by_id(row.get("employee_id"))
+        return bool(employee and (str(employee.get("uid")) in ids or str(employee.get("id")) in ids))
+    employee = await SupabaseHelper.get_public_user_by_id(row.get("employee_id"))
+    return bool(employee and str(employee.get("uid")) == str(current_user.get("uid")) and row.get("status") == "approved")
+
+
 @router.post("/")
 async def create_performance_review(
     review_data: PerformanceReviewCreate,
@@ -64,7 +82,7 @@ async def create_performance_review(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot create review for another reviewer")
 
         user_role = current_user.get("role")
-        if user_role not in ["lead", "manager", "director", "hr"]:
+        if user_role not in ["lead", "manager", "director", "hr", "super_admin"]:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions to create reviews")
 
         employee_row = await SupabaseHelper.get_user_row_by_firebase_uid(review_data.userId)
@@ -72,14 +90,25 @@ async def create_performance_review(
         if not employee_row or not reviewer_row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee or reviewer not found")
 
-        status_value = "approved" if user_role == "director" else "pending"
+        if user_role in {"lead", "manager"}:
+            reportees = await SupabaseHelper.get_reportees(current_user.get("uid"))
+            allowed = {str(value) for item in reportees for value in (item.get("uid"), item.get("id")) if value}
+            if str(employee_row.get("id")) not in allowed and str(employee_row.get("uid")) not in allowed:
+                raise HTTPException(status_code=403, detail="You can only review employees in your reporting hierarchy")
+        if str(employee_row.get("id")) == str(reviewer_row.get("id")):
+            raise HTTPException(status_code=422, detail="You cannot submit a performance review for yourself")
+
+        status_value = "approved" if user_role in {"director", "super_admin"} else "pending"
+        employee_name = employee_row.get("name") or "Employee"
+        employee_email = employee_row.get("email") or ""
+        reviewer_name = reviewer_row.get("name") or "Reviewer"
         review_row = {
             "employee_id": str(employee_row["id"]),
-            "user_name": review_data.userName,
-            "user_email": review_data.userEmail,
+            "user_name": employee_name,
+            "user_email": employee_email,
             "reviewer_id": str(reviewer_row["id"]),
-            "reviewer_name": review_data.reviewerName,
-            "reviewer_role": review_data.reviewerRole,
+            "reviewer_name": reviewer_name,
+            "reviewer_role": user_role,
             "review_type": review_data.reviewType,
             "rating": review_data.rating,
             "context": review_data.context,
@@ -95,7 +124,7 @@ async def create_performance_review(
             "updated_at": datetime.utcnow().isoformat(),
         }
 
-        if user_role == "director":
+        if user_role in {"director", "super_admin"}:
             review_row["approved_by"] = str(reviewer_row["id"])
             review_row["approver_name"] = current_user.get("name", "Unknown")
             review_row["approval_date"] = datetime.utcnow().isoformat()
@@ -137,29 +166,48 @@ async def create_performance_review(
 
 
 @router.get("/")
-async def list_reviews(current_user: dict = Depends(require_role("lead", "manager", "director", "hr"))):
+async def list_reviews(current_user: dict = Depends(require_role("employee", "lead", "manager", "director", "hr", "super_admin"))):
     try:
-        current_row = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
         query = supabase.table("performance_reviews").select("*").order("created_at", desc=True)
-        if current_user["role"] == "lead" and current_row:
-            query = query.eq("reviewer_id", str(current_row["id"]))
         resp = query.execute()
-        return [await _review_to_public(row) for row in (resp.data or [])]
+        user_map = await SupabaseHelper.get_public_user_map()
+        role = current_user.get("role")
+        if role in {"hr", "director", "super_admin"}:
+            scoped = resp.data or []
+        else:
+            current_row = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
+            current_id = str((current_row or {}).get("id"))
+            reportee_ids: set[str] = set()
+            if role in {"lead", "manager"}:
+                reportees = await SupabaseHelper.get_reportees(str(current_user.get("uid")))
+                reportee_ids = {str(value) for person in reportees for value in (person.get("uid"), person.get("id")) if value}
+            scoped = []
+            for row in (resp.data or []):
+                employee = user_map.get(str(row.get("employee_id")), {})
+                if str(row.get("reviewer_id")) == current_id:
+                    scoped.append(row)
+                elif role in {"lead", "manager"} and (str(employee.get("uid")) in reportee_ids or str(employee.get("id")) in reportee_ids):
+                    scoped.append(row)
+                elif role == "employee" and str(employee.get("uid")) == str(current_user.get("uid")) and row.get("status") == "approved":
+                    scoped.append(row)
+        return [await _review_to_public(row, user_map) for row in scoped]
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error fetching performance reviews: {str(e)}")
 
 
 @router.get("/pending-approvals")
-async def get_pending_approvals(current_user: dict = Depends(require_role("director"))):
+async def get_pending_approvals(current_user: dict = Depends(require_role("director", "super_admin"))):
     try:
         resp = supabase.table("performance_reviews").select("*").eq("status", "pending").order("created_at", desc=True).execute()
-        return [await _review_to_public(row) for row in (resp.data or [])]
+        current_row = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
+        user_map = await SupabaseHelper.get_public_user_map()
+        return [await _review_to_public(row, user_map) for row in (resp.data or []) if str(row.get("reviewer_id")) != str((current_row or {}).get("id"))]
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error fetching pending reviews: {str(e)}")
 
 
 @router.post("/{review_id}/approve")
-async def approve_review(review_id: str, approval: ApprovalRequest, current_user: dict = Depends(require_role("director"))):
+async def approve_review(review_id: str, approval: ApprovalRequest, current_user: dict = Depends(require_role("director", "super_admin"))):
     try:
         if approval.approvedBy != current_user.get("uid"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot approve as another user")
@@ -179,10 +227,10 @@ async def approve_review(review_id: str, approval: ApprovalRequest, current_user
             "approver_name": approval.approverName,
             "approval_date": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat(),
-        }).eq("id", review_id).execute()
+        }).eq("id", review_id).eq("status", "pending").execute()
         updated = update_resp.data[0] if update_resp.data else None
         if not updated:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to approve review")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This review was already processed")
 
         log_audit_event(
             actor_id=current_user.get("uid"),
@@ -214,7 +262,7 @@ async def approve_review(review_id: str, approval: ApprovalRequest, current_user
 
 
 @router.post("/{review_id}/reject")
-async def reject_review(review_id: str, rejection: RejectionRequest, current_user: dict = Depends(require_role("director"))):
+async def reject_review(review_id: str, rejection: RejectionRequest, current_user: dict = Depends(require_role("director", "super_admin"))):
     try:
         if rejection.rejectedBy != current_user.get("uid"):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot reject as another user")
@@ -227,6 +275,8 @@ async def reject_review(review_id: str, rejection: RejectionRequest, current_use
         if review_data.get("status") != "pending":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Review is not pending approval")
 
+        if not rejection.rejectionReason.strip():
+            raise HTTPException(status_code=422, detail="A rejection reason is required")
         rejector_row = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
         update_resp = supabase.table("performance_reviews").update({
             "status": "rejected",
@@ -234,9 +284,9 @@ async def reject_review(review_id: str, rejection: RejectionRequest, current_use
             "rejection_reason": rejection.rejectionReason,
             "rejection_date": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat(),
-        }).eq("id", review_id).execute()
+        }).eq("id", review_id).eq("status", "pending").execute()
         if not update_resp.data:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to reject review")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This review was already processed")
 
         log_audit_event(
             actor_id=current_user.get("uid"),
@@ -269,7 +319,7 @@ async def reject_review(review_id: str, rejection: RejectionRequest, current_use
 
 
 @router.get("/stats")
-async def get_performance_stats(current_user: dict = Depends(require_role("hr", "director"))):
+async def get_performance_stats(current_user: dict = Depends(require_role("hr", "director", "super_admin"))):
     try:
         approved_resp = supabase.table("performance_reviews").select("*").eq("status", "approved").execute()
         pending_resp = supabase.table("performance_reviews").select("*").eq("status", "pending").execute()
@@ -280,12 +330,14 @@ async def get_performance_stats(current_user: dict = Depends(require_role("hr", 
         total_rating = sum(float(review.get("rating", 0) or 0) for review in reviews)
         avg_rating = total_rating / total_reviews if total_reviews > 0 else 0
 
+        users = await SupabaseHelper.get_public_user_map()
         by_department: Dict[str, Dict[str, Any]] = {}
         user_ratings: Dict[str, Dict[str, Any]] = {}
         rating_distribution = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
 
         for review in reviews:
-            dept = review.get("department", "Unknown")
+            employee = users.get(str(review.get("employee_id")), {})
+            dept = employee.get("department") or "Unknown"
             by_department.setdefault(dept, {"count": 0, "total_rating": 0})
             by_department[dept]["count"] += 1
             by_department[dept]["total_rating"] += float(review.get("rating", 0) or 0)
@@ -294,10 +346,10 @@ async def get_performance_stats(current_user: dict = Depends(require_role("hr", 
             if 1 <= rating <= 5:
                 rating_distribution[rating] = rating_distribution.get(rating, 0) + 1
 
-            user_id = review.get("user_id")
+            user_id = review.get("employee_id")
             if user_id not in user_ratings:
                 user_ratings[user_id] = {
-                    "userId": review.get("user_id"),
+                    "userId": user_id,
                     "userName": review.get("user_name", "Unknown"),
                     "ratings": [],
                 }
@@ -312,7 +364,7 @@ async def get_performance_stats(current_user: dict = Depends(require_role("hr", 
         for _, data in user_ratings.items():
             avg = sum(data["ratings"]) / len(data["ratings"]) if data["ratings"] else 0
             top_performers.append({
-                "userId": data["userId"],
+                "userId": (users.get(str(data["userId"]), {}) or {}).get("uid") or data["userId"],
                 "userName": data["userName"],
                 "avgRating": round(avg, 2),
                 "reviewCount": len(data["ratings"]),
@@ -334,11 +386,13 @@ async def get_performance_stats(current_user: dict = Depends(require_role("hr", 
 
 
 @router.get("/{review_id}")
-async def get_review(review_id: str, current_user: dict = Depends(require_role("lead", "manager", "director", "hr"))):
+async def get_review(review_id: str, current_user: dict = Depends(require_role("employee", "lead", "manager", "director", "hr", "super_admin"))):
     try:
         doc = supabase.table("performance_reviews").select("*").eq("id", review_id).single().execute()
         if not doc.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review not found")
+        if not await _can_view_review(current_user, doc.data):
+            raise HTTPException(status_code=403, detail="Access denied")
         return await _review_to_public(doc.data)
     except HTTPException:
         raise
@@ -355,10 +409,12 @@ async def delete_review(review_id: str, current_user: dict = Depends(get_current
 
         review_data = doc.data[0]
         current_row = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
-        is_hr = current_user["role"] in ["hr", "director"]
+        is_hr = current_user["role"] in ["hr", "director", "super_admin"]
         is_reviewer = current_row and str(review_data.get("reviewer_id")) == str(current_row["id"])
         if not (is_hr or is_reviewer):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        if not is_hr and review_data.get("status") == "approved":
+            raise HTTPException(status_code=403, detail="Approved reviews cannot be deleted by the reviewer")
 
         log_audit_event(
             actor_id=current_user.get("uid"),
