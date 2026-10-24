@@ -1,6 +1,6 @@
-# JoyHR - HR Management System Backend
+# Hestia - HR Management System Backend
 
-FastAPI backend for JoyHR application with Firebase Authentication and Firestore database.
+FastAPI backend for Hestia with Firebase Authentication and Firestore database.
 
 ## Setup
 

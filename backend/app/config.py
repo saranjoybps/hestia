@@ -7,11 +7,11 @@ class Settings(BaseSettings):
     """Application settings and configuration"""
     
     # Firebase
-    firebase_credentials_path: str = "./firebase-credentials.json"
+    firebase_credentials_path: str = "credentials/firebase-credentials.json"
     firebase_credentials: str | None = None  # For Vercel/production deployment
     
     # API Settings
-    api_title: str = "JoyHR API"
+    api_title: str = "Hestia API"
     api_description: str = "HR Management System API"
     api_version: str = "1.0.0"
     api_host: str = "0.0.0.0"
@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     
     # Google Drive (for document storage)
     google_service_account_path: str = "credentials/service-account.json"
+    google_service_account_json: str | None = None  # Inline service account JSON for deployment
     google_drive_folder_id: str = ""  # Optional: specific folder for letters
 
     # Zoho SMTP (optional)

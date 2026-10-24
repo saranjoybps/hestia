@@ -49,7 +49,7 @@ def send_onboarding_email(
     lead: Optional[str] = None,
 ):
     """Send onboarding email with credentials and employee details."""
-    subject = "Welcome to JoyBps - Your JoyHR Access"
+    subject = "Welcome to Hestia - Your account access"
 
     details_lines = [
         f"Name: {employee_name}",
@@ -71,7 +71,7 @@ def send_onboarding_email(
 
     body = (
         f"Hello {employee_name},\n\n"
-        "Welcome to JoyBps. Your JoyHR account has been created.\n\n"
+        "Welcome to Hestia. Your account has been created.\n\n"
         "Login URL: https://hr.joyrts.com/\n"
         f"Username: {to_email}\n"
         f"Temporary Password: {password}\n\n"
@@ -83,4 +83,17 @@ def send_onboarding_email(
         "JoyBps"
     )
 
+    send_email_smtp(to_email=to_email, subject=subject, body=body)
+
+
+def send_employee_password_setup_email(*, to_email: str, employee_name: str, setup_url: str) -> None:
+    """Send a one-time Firebase password reset link without transmitting a password."""
+    subject = "Complete your Hestia account setup"
+    body = (
+        f"Hello {employee_name},\n\n"
+        "Your Hestia employee account has been created. Use the secure link below to choose your own password.\n\n"
+        f"Set your password: {setup_url}\n\n"
+        "This link is single-use and expires. If you did not expect this invitation, contact your HR team.\n\n"
+        "Regards,\nHestia"
+    )
     send_email_smtp(to_email=to_email, subject=subject, body=body)

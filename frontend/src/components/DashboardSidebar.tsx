@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -16,13 +16,14 @@ import {
   TrendingUp,
   FolderOpen,
   Megaphone,
-  UserCircle,
   BarChart3,
   Building2,
   Clock,
   UserPlus,
   Menu,
   ClipboardList,
+  BriefcaseBusiness,
+  Package,
 } from 'lucide-react';
 
 interface NavItem {
@@ -34,22 +35,23 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, group: 'Main' },
-  { title: 'My Profile', href: '/profile', icon: UserCircle, group: 'Main' },
-  { title: 'Attendance', href: '/attendance', icon: Calendar, group: 'Work' },
-  { title: 'Leave Requests', href: '/leaves', icon: FileText, group: 'Work' },
-  { title: 'Shifts', href: '/dashboard/shifts', icon: Clock, group: 'Work' },
-  { title: 'Tasks', href: '/tasks', icon: CheckSquare, group: 'Work' },
-  { title: 'Performance', href: '/performance', icon: TrendingUp, roles: ['director', 'manager', 'lead', 'hr'], group: 'Work' },
-  { title: 'Employees', href: '/dashboard/employees', icon: UserPlus, roles: ['manager', 'director', 'hr'], group: 'Manage' },
-  { title: 'Documents', href: '/documents', icon: FolderOpen, roles: ['director', 'hr'], group: 'Manage' },
-  { title: 'Announcements', href: '/announcements', icon: Megaphone, group: 'Manage' },
-  { title: 'Organization', href: '/organization', icon: Building2, roles: ['director', 'hr'], group: 'Manage' },
-  { title: 'Reports & Analytics', href: '/reports', icon: BarChart3, roles: ['director', 'manager', 'hr'], group: 'Manage' },
-  { title: 'Audit Log', href: '/audit-logs', icon: ClipboardList, roles: ['director', 'super_admin'], group: 'Manage' },
+  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, group: 'Overview' },
+  { title: 'Attendance', href: '/attendance', icon: Calendar, group: 'My Work' },
+  { title: 'Leave Requests', href: '/leaves', icon: FileText, group: 'My Work' },
+  { title: 'Shifts', href: '/dashboard/shifts', icon: Clock, group: 'My Work' },
+  { title: 'Tasks', href: '/tasks', icon: CheckSquare, group: 'My Work' },
+  { title: 'Performance', href: '/performance', icon: TrendingUp, roles: ['employee', 'lead', 'manager', 'director', 'hr', 'super_admin'], group: 'My Work' },
+  { title: 'Employees', href: '/dashboard/employees', icon: UserPlus, roles: ['manager', 'director', 'hr'], group: 'People & Resources' },
+  { title: 'Candidates', href: '/dashboard/candidates', icon: BriefcaseBusiness, roles: ['lead', 'manager', 'director', 'hr', 'super_admin'], group: 'People & Resources' },
+  { title: 'Assets', href: '/dashboard/assets', icon: Package, roles: ['employee', 'lead', 'manager', 'director', 'hr', 'super_admin'], group: 'People & Resources' },
+  { title: 'Organization', href: '/organization', icon: Building2, roles: ['director', 'hr', 'super_admin'], group: 'Company' },
+  { title: 'Documents', href: '/documents', icon: FolderOpen, roles: ['director', 'hr', 'super_admin'], group: 'Company' },
+  { title: 'Announcements', href: '/announcements', icon: Megaphone, group: 'Company' },
+  { title: 'Reports & Analytics', href: '/reports', icon: BarChart3, roles: ['lead', 'manager', 'director', 'hr', 'super_admin'], group: 'Company' },
+  { title: 'Audit Log', href: '/audit-logs', icon: ClipboardList, roles: ['director', 'super_admin'], group: 'Company' },
 ];
 
-const groups = ['Main', 'Work', 'Manage'];
+const groups = ['Overview', 'My Work', 'People & Resources', 'Company'];
 
 export default function DashboardSidebar() {
   const pathname = usePathname();
@@ -69,20 +71,12 @@ export default function DashboardSidebar() {
   const SidebarContent = () => (
     <div className="flex flex-col h-full bg-white dark:bg-gray-950">
       {/* Logo */}
-      <div className="px-6 py-4 border-b dark:border-gray-800">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-bold text-sm">J</span>
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-gray-900 dark:text-white leading-none">JoyHR</h1>
-            <p className="text-xs text-gray-400 mt-0.5">HR Management</p>
-          </div>
-        </div>
+      <div className="h-17 px-6 flex items-center border-b dark:border-gray-800">
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-none">Hestia</h1>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+      <nav className="sidebar-scrollbar-hidden flex-1 overflow-y-auto px-3 py-4 space-y-5">
         {groups.map((group) => {
           const items = navItems.filter(item => item.group === group && canAccessItem(item));
           if (items.length === 0) return null;
@@ -102,12 +96,15 @@ export default function DashboardSidebar() {
                       <Link
                         href={item.href}
                         onClick={() => setOpen(false)}
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white"
+                        className={cn(
+                          'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white',
+                          isActive ? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-white' : 'text-gray-600 dark:text-gray-400'
+                        )}
                       >
                         <Icon className="h-4 w-4 flex-shrink-0 text-gray-400 dark:text-gray-500" />
                         <span className="truncate">{item.title}</span>
                         {isActive && (
-                          <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white opacity-80" />
+                          <span className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
                         )}
                       </Link>
                     </li>
@@ -121,7 +118,7 @@ export default function DashboardSidebar() {
 
       {/* Footer */}
       <div className="px-4 py-3 border-t dark:border-gray-800">
-        <p className="text-xs text-gray-400">© 2026 Joyrts · v1.0.4</p>
+        <p className="text-xs text-gray-400">Â© 2026 Hestia Â· v1.0.4</p>
       </div>
     </div>
   );
@@ -150,3 +147,4 @@ export default function DashboardSidebar() {
     </>
   );
 }
+

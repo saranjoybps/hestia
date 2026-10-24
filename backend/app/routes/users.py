@@ -21,13 +21,14 @@ def build_full_name(first_name: Optional[str], last_name: Optional[str]) -> str:
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(
     user_data: UserCreate,
-    current_user: dict = Depends(require_role("hr", "director")),
+    current_user: dict = Depends(require_role("hr", "director", "super_admin")),
 ):
     try:
-        if user_data.role == "director" and current_user.get("created_by") != "system":
+        actor_role = str(current_user.get("role") or "").lower()
+        if user_data.role in ["director", "super_admin"] and actor_role != "super_admin" and current_user.get("created_by") != "system":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only super administrator can create director accounts",
+                detail="Only a super administrator can create Director or super administrator accounts",
             )
 
         display_name = build_full_name(user_data.name, user_data.last_name) or user_data.name
@@ -149,6 +150,8 @@ async def get_current_user_profile(current_user: dict = Depends(get_current_user
 async def get_user(user_id: str, current_user: dict = Depends(get_current_user)):
     user_data = await SupabaseHelper.get_public_user_by_firebase_uid(user_id)
     if not user_data:
+        user_data = await SupabaseHelper.get_public_user_by_id(user_id)
+    if not user_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return UserResponse(**user_data)
 
@@ -159,7 +162,9 @@ async def update_user(
     user_update: UserUpdate,
     current_user: dict = Depends(get_current_user),
 ):
-    is_admin = current_user.get("role") in ["hr", "director"]
+    current_role = str(current_user.get("role") or "").lower()
+    is_top_level = current_role in ["hr", "director", "super_admin"]
+    is_admin = current_role in ["hr", "director", "super_admin"]
     is_self = current_user.get("uid") == user_id
     if not is_admin and not is_self:
         raise HTTPException(
@@ -172,15 +177,67 @@ async def update_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     update_data = user_update.model_dump(exclude_unset=True)
-    if "role" in update_data and update_data["role"] == "director":
-        if current_user.get("created_by") != "system":
+    restricted_fields = {"role", "department", "designation", "dateOfJoining", "manager_id", "lead_id", "status"}
+    requested_restricted_fields = restricted_fields.intersection(update_data)
+    if requested_restricted_fields and not is_top_level:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only HR, a Director, or a super administrator can change role, department, designation, joining date, status, or reporting lines",
+        )
+    if "role" in update_data and update_data["role"] != existing.get("role") and update_data["role"] in ["director", "super_admin"]:
+        if current_role != "super_admin" and current_user.get("created_by") != "system":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only super administrator can assign director role",
+                detail="Only a super administrator can assign Director or super administrator roles",
             )
 
     if not is_admin:
         update_data = {k: v for k, v in update_data.items() if k in ["name", "last_name", "phone"]}
+
+    if "department" in update_data and not str(update_data.get("department") or "").strip():
+        update_data["department"] = None
+    if update_data.get("department"):
+        department = supabase.table("departments").select("id").eq("name", str(update_data["department"]).strip()).limit(1).execute().data
+        if not department:
+            raise HTTPException(status_code=400, detail="Select a department from the organization list")
+        update_data["department"] = str(update_data["department"]).strip()
+
+    if "manager_id" in update_data and update_data["manager_id"]:
+        manager_id = str(update_data["manager_id"])
+        if manager_id == str(user_id):
+            raise HTTPException(status_code=400, detail="A user cannot report to themselves")
+        manager = await SupabaseHelper.get_public_user_by_firebase_uid(manager_id)
+        if not manager:
+            raise HTTPException(status_code=404, detail="Reporting person not found")
+        manager_role = str(manager.get("role") or "").lower()
+        allowed_manager_roles = {"lead", "manager", "director"}
+        target_role = str(update_data.get("role") or existing.get("role") or "employee")
+        if target_role in {"director", "super_admin"}:
+            raise HTTPException(status_code=400, detail="Directors and super administrators cannot have a reporting manager")
+        if manager_role not in allowed_manager_roles:
+            raise HTTPException(status_code=400, detail="Employees and HR users cannot be selected as reporting managers")
+        allowed_parent_by_role = {
+            "employee": {"lead", "manager", "director"},
+            "lead": {"manager", "director"},
+            "manager": {"director"},
+            "hr": set(),
+        }
+        if manager_role not in allowed_parent_by_role.get(target_role, set()):
+            raise HTTPException(status_code=400, detail=f"A {target_role.replace('_', ' ')} cannot report to a {manager_role.replace('_', ' ')}")
+        # Walk the proposed manager chain to prevent a reporting cycle.
+        current = manager
+        seen = {str(user_id)}
+        while current:
+            current_uid = str(current.get("uid") or "")
+            if current_uid in seen:
+                raise HTTPException(status_code=400, detail="This reporting change would create a hierarchy cycle")
+            seen.add(current_uid)
+            parent_id = current.get("manager_id") or current.get("lead_id")
+            current = None
+            if parent_id:
+                current = await SupabaseHelper.get_public_user_by_firebase_uid(str(parent_id))
+                if not current:
+                    current = await SupabaseHelper.get_public_user_by_id(str(parent_id))
 
     if "dateOfJoining" in update_data:
         update_data["date_of_joining"] = update_data.pop("dateOfJoining")
@@ -259,6 +316,14 @@ async def get_reportees(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only leads, managers, and directors can view reportees",
+        )
+
+    # A caller may only read their own reporting tree. Without this check any
+    # lead/manager could enumerate another manager's team by changing the URL.
+    if current_user.get("uid") != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view your own reportees",
         )
 
     reportees = await SupabaseHelper.get_reportees(user_id)

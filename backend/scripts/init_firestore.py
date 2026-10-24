@@ -134,7 +134,7 @@ def init_collections():
 
 
 if __name__ == "__main__":
-    print("Initializing JoyHR Firestore Database...\n")
+    print("Initializing Hestia Firestore Database...\n")
     
     try:
         print("Setting up permissions...")

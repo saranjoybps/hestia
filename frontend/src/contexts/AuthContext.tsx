@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { User, onIdTokenChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import apiClient from '@/lib/api';
 
@@ -47,7 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       
       if (firebaseUser) {
@@ -55,6 +55,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Get ID token and store it
           const token = await firebaseUser.getIdToken();
           localStorage.setItem('authToken', token);
+          const sessionResponse = await fetch('/api/auth/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token }),
+          });
+          if (!sessionResponse.ok) throw new Error('Unable to establish server session');
           
           // Fetch user data from backend
           const response = await apiClient.get('/users/me');
@@ -65,6 +71,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } else {
         localStorage.removeItem('authToken');
+        await fetch('/api/auth/session', { method: 'DELETE' });
         setUserData(null);
       }
       
@@ -108,6 +115,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sessionStorage.setItem('authToken', token);
       }
 
+      const sessionResponse = await fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      if (!sessionResponse.ok) throw new Error('Unable to establish server session');
+
       await createAuditLog(token, {
         module: 'auth',
         action: 'login',
@@ -137,6 +151,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
       }
       await signOut(auth);
+      await fetch('/api/auth/session', { method: 'DELETE' });
       localStorage.removeItem('authToken');
       sessionStorage.removeItem('authToken');
       setUserData(null);

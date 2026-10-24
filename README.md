@@ -1,4 +1,4 @@
-# JoyHR - HR Management Web Application
+# Hestia - HR Management Web Application
 
 A comprehensive HR Management System built with Next.js, FastAPI, Firebase Authentication, and Google Cloud Firestore.
 

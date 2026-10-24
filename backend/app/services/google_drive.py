@@ -6,6 +6,7 @@ from googleapiclient.http import MediaInMemoryUpload
 from google.oauth2 import service_account
 from typing import Optional
 import os
+import json
 from io import BytesIO
 from app.config import get_settings
 
@@ -21,10 +22,17 @@ class GoogleDriveService:
         credentials_path = settings.google_service_account_path
         
         try:
-            self.credentials = service_account.Credentials.from_service_account_file(
-                credentials_path,
-                scopes=self.SCOPES
-            )
+            if settings.google_service_account_json:
+                credential_info = json.loads(settings.google_service_account_json)
+                self.credentials = service_account.Credentials.from_service_account_info(
+                    credential_info,
+                    scopes=self.SCOPES
+                )
+            else:
+                self.credentials = service_account.Credentials.from_service_account_file(
+                    credentials_path,
+                    scopes=self.SCOPES
+                )
             self.service = build('drive', 'v3', credentials=self.credentials)
             self.folder_id = settings.google_drive_folder_id if settings.google_drive_folder_id else None
         except Exception as e:
@@ -79,16 +87,6 @@ class GoogleDriveService:
                 fields='id, webViewLink, webContentLink'
             ).execute()
             
-            # Make file accessible via link (anyone with link can view)
-            permission = {
-                'type': 'anyone',
-                'role': 'reader'
-            }
-            self.service.permissions().create(
-                fileId=file['id'],
-                body=permission
-            ).execute()
-            
             return {
                 'file_id': file.get('id'),
                 'web_view_link': file.get('webViewLink'),
@@ -133,6 +131,7 @@ class GoogleDriveService:
             return None
         
         try:
+            self.restrict_public_access(file_id)
             request = self.service.files().get_media(fileId=file_id)
             file_buffer = BytesIO()
             
@@ -150,6 +149,20 @@ class GoogleDriveService:
         except Exception as e:
             print(f"Error downloading file from Google Drive: {e}")
             return None
+
+    def restrict_public_access(self, file_id: str) -> bool:
+        """Remove legacy anyone-with-link permissions from an application file."""
+        if not self.service:
+            return False
+        try:
+            permissions = self.service.permissions().list(fileId=file_id, fields='permissions(id,type)').execute().get('permissions', [])
+            for permission in permissions:
+                if permission.get('type') == 'anyone':
+                    self.service.permissions().delete(fileId=file_id, permissionId=permission['id']).execute()
+            return True
+        except Exception as e:
+            print(f"Error restricting document permissions: {e}")
+            return False
     
     def create_folder(self, folder_name: str, parent_folder_id: Optional[str] = None) -> Optional[str]:
         """

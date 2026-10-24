@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "JoyHR - HR Management System",
-  description: "Complete HR management solution for Joyrts",
+  title: "Hestia | HR Management",
+  description: "Hestia human resources management platform",
 };
 
 export default function RootLayout({

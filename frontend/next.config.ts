@@ -24,6 +24,16 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
+        source: '/candidates',
+        destination: '/dashboard/candidates',
+        permanent: false,
+      },
+      {
+        source: '/assets',
+        destination: '/dashboard/assets',
+        permanent: false,
+      },
+      {
         source: '/leaves',
         destination: '/dashboard/leaves',
         permanent: false,

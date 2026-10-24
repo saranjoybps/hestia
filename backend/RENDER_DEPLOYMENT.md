@@ -1,4 +1,4 @@
-# JoyHR Backend Deployment Guide for Render
+# Hestia Backend Deployment Guide for Render
 
 ## Prerequisites
 1. GitHub repository with the backend code

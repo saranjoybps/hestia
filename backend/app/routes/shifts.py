@@ -1,92 +1,93 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Body, Depends, HTTPException
 
 from app.dependencies import get_current_user, require_role, supabase
-from app.models import ShiftCreate, ShiftUpdate
+from app.models import ShiftAllocationCreate, ShiftAllocationUpdate, ShiftTemplateCreate, ShiftTemplateUpdate
 from app.services.audit_log import log_audit_event
 from app.supabase_helper import SupabaseHelper
 
 router = APIRouter(tags=["shifts"])
 
-
-ALLOWED_TARGET_ROLES = {
+TEMPLATE_ROLES = {"hr", "director", "super_admin"}
+ALLOCATION_ROLES = {"lead", "manager", "hr", "director", "super_admin"}
+TARGET_ROLES = {
     "lead": {"employee"},
-    "manager": {"lead", "employee"},
-    "director": {"manager", "lead", "employee"},
-    "hr": {"manager", "lead", "employee"},
+    "manager": {"employee", "lead"},
+    "hr": {"employee", "lead", "manager"},
+    "director": {"employee", "lead", "manager", "hr", "director"},
+    "super_admin": {"employee", "lead", "manager", "hr", "director"},
 }
-
 APPROVAL_CREATOR_ROLES = {
-    "manager": {"manager", "lead"},
-    "director": {"director", "manager", "lead"},
-    "super_admin": {"director", "manager", "lead"},
+    "manager": {"lead"},
+    "director": {"hr", "manager", "lead"},
+    "super_admin": {"hr", "manager", "lead", "director"},
 }
 
 
-def _get_descendants(manager_uid: str, user_map: Dict[str, Dict[str, Any]], max_depth: int = 8) -> Set[str]:
-    def _identifiers(row: Dict[str, Any]) -> Set[str]:
-        identifiers: Set[str] = set()
-        if row.get("uid"):
-            identifiers.add(str(row["uid"]))
-        if row.get("id"):
-            identifiers.add(str(row["id"]))
-        return identifiers
-
-    root_identifiers: Set[str] = {str(manager_uid)} if manager_uid else set()
-    for row in user_map.values():
-        row_identifiers = _identifiers(row)
-        if str(manager_uid) in row_identifiers:
-            root_identifiers.update(row_identifiers)
-            break
-
-    visited: Set[str] = set(root_identifiers)
-    frontier: Set[str] = set(root_identifiers)
-    depth = 0
-    while frontier and depth < max_depth:
+def _get_descendants(manager_uid: str, user_map: Dict[str, Dict[str, Any]]) -> Set[str]:
+    root = next((u for u in user_map.values() if u.get("uid") == manager_uid), None)
+    if not root:
+        return set()
+    root_ids = {str(manager_uid), str(root.get("id"))}
+    descendants: Set[str] = set()
+    frontier = set(root_ids)
+    while frontier:
         next_frontier: Set[str] = set()
-        for uid in frontier:
-            for other_uid, data in user_map.items():
-                if other_uid in visited or other_uid == manager_uid:
-                    continue
-                data_identifiers = _identifiers(data)
-                manager_id = str(data.get("manager_id") or "")
-                lead_id = str(data.get("lead_id") or "")
-                if manager_id in frontier or lead_id in frontier:
-                    visited.update(data_identifiers)
-                    next_frontier.update(data_identifiers)
+        for row in user_map.values():
+            uid = str(row.get("uid") or "")
+            internal_id = str(row.get("id") or "")
+            if uid in descendants or internal_id in descendants or uid == manager_uid:
+                continue
+            if str(row.get("manager_id") or "") in frontier or str(row.get("lead_id") or "") in frontier:
+                descendants.update(value for value in (uid, internal_id) if value)
+                next_frontier.update(value for value in (uid, internal_id) if value)
         frontier = next_frontier
-        depth += 1
-    return visited - root_identifiers
+    return descendants - root_ids
 
 
-def _ensure_shift_hierarchy_access(current_user: Dict[str, Any], target_user: Dict[str, Any], action: str) -> None:
-    actor_role = current_user.get("role")
-    actor_uid = current_user.get("uid")
-    target_uid = target_user.get("uid")
-    target_role = target_user.get("role")
-
-    allowed_roles = ALLOWED_TARGET_ROLES.get(actor_role, set())
-    if not allowed_roles:
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-    if target_role not in allowed_roles:
-        raise HTTPException(status_code=403, detail=f"As {actor_role}, you can only {action} shifts for: {', '.join(sorted(allowed_roles))}")
-
-    user_map = getattr(_ensure_shift_hierarchy_access, "_user_map", {})
-    if actor_uid not in _get_descendants(actor_uid, user_map) and actor_uid != target_uid and actor_role in {"lead", "manager"}:
-        # fallback check is handled by caller when user_map is populated
-        pass
+async def _get_template(template_id: str) -> Dict[str, Any]:
+    response = supabase.table("shift_templates").select("*").eq("id", template_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Shift template not found")
+    row = response.data[0]
+    return row
 
 
-async def _current_internal_user_id(firebase_uid: str) -> Optional[str]:
-    return await SupabaseHelper.get_internal_user_id(firebase_uid)
+async def _get_employee(employee_uid: str) -> Dict[str, Any]:
+    row = await SupabaseHelper.get_user_row_by_firebase_uid(employee_uid)
+    if not row:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    public = SupabaseHelper._public_user(row) or {}
+    public["id"] = str(row["id"])
+    return public
 
 
-async def _shift_to_public(row: Dict[str, Any]) -> Dict[str, Any]:
-    employee = await SupabaseHelper.get_public_user_by_id(row.get("employee_id")) if row.get("employee_id") else None
-    creator = await SupabaseHelper.get_public_user_by_id(row.get("created_by")) if row.get("created_by") else None
-    approver = await SupabaseHelper.get_public_user_by_id(row.get("approved_by")) if row.get("approved_by") else None
+async def _check_allocation_scope(actor: Dict[str, Any], employee: Dict[str, Any]) -> None:
+    role = actor.get("role")
+    if role not in ALLOCATION_ROLES:
+        raise HTTPException(status_code=403, detail="You cannot allocate shifts")
+    if employee.get("role") not in TARGET_ROLES.get(role, set()):
+        raise HTTPException(status_code=403, detail="You cannot allocate shifts to this role")
+    if role in {"lead", "manager"}:
+        user_map = await SupabaseHelper.get_public_user_map()
+        if employee.get("uid") not in _get_descendants(str(actor.get("uid")), user_map):
+            raise HTTPException(status_code=403, detail="You can only allocate shifts within your reporting tree")
+
+
+async def _get_allocation(shift_id: str) -> Dict[str, Any]:
+    response = supabase.table("shifts").select("*").eq("id", shift_id).execute()
+    if not response.data or not response.data[0].get("employee_id"):
+        raise HTTPException(status_code=404, detail="Shift allocation not found")
+    return response.data[0]
+
+
+async def _shift_to_public(row: Dict[str, Any], user_map: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
+    user_map = user_map or await SupabaseHelper.get_public_user_map()
+    employee = user_map.get(str(row.get("employee_id"))) if row.get("employee_id") else None
+    creator = user_map.get(str(row.get("created_by"))) if row.get("created_by") else None
+    approver = user_map.get(str(row.get("approved_by"))) if row.get("approved_by") else None
     return {
         "id": str(row.get("id")),
         "name": row.get("name"),
@@ -94,6 +95,7 @@ async def _shift_to_public(row: Dict[str, Any]) -> Dict[str, Any]:
         "employee_name": row.get("employee_name") or (employee.get("name") if employee else None),
         "employee_email": row.get("employee_email") or (employee.get("email") if employee else None),
         "shift_type": row.get("shift_type"),
+        "shift_template_id": row.get("shift_template_id"),
         "shift_date": row.get("shift_date"),
         "start_time": row.get("start_time"),
         "end_time": row.get("end_time"),
@@ -109,468 +111,275 @@ async def _shift_to_public(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def _can_current_user_approve_shift(current_user: Dict[str, Any], shift_data: Dict[str, Any], role_cache: Dict[str, Optional[str]]) -> bool:
-    approver_role = current_user.get("role")
-    allowed_creator_roles = APPROVAL_CREATOR_ROLES.get(approver_role, set())
-    if not allowed_creator_roles:
+async def _can_approve(actor: Dict[str, Any], allocation: Dict[str, Any], user_map: Dict[str, Dict[str, Any]]) -> bool:
+    role = actor.get("role")
+    creator = user_map.get(str(allocation.get("created_by"))) if allocation.get("created_by") else None
+    if not creator or creator.get("role") not in APPROVAL_CREATOR_ROLES.get(role, set()):
         return False
-
-    creator = await SupabaseHelper.get_public_user_by_id(shift_data.get("created_by")) if shift_data.get("created_by") else None
-    creator_role = creator.get("role") if creator else None
-    if creator_role not in allowed_creator_roles:
-        return False
-
-    if approver_role == "manager":
-        user_map = role_cache.get("_user_map") or await SupabaseHelper.get_public_user_map()
-        return shift_data.get("employee_id") in _get_descendants(current_user.get("uid"), user_map)
+    if role == "manager":
+        employee = user_map.get(str(allocation.get("employee_id"))) if allocation.get("employee_id") else None
+        return bool(employee and employee.get("uid") in _get_descendants(str(actor.get("uid")), user_map))
     return True
 
 
-def _normalize_shift_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    return row
+def _audit(actor: Dict[str, Any], action: str, description: str, target_id: str, metadata: Dict[str, Any]) -> None:
+    log_audit_event(
+        actor_id=actor.get("uid"), actor_name=actor.get("name"), actor_email=actor.get("email"),
+        module="shift_management", action=action, description=description, result="success",
+        target_type="shift", target_id=target_id, metadata=metadata,
+    )
 
 
-def _build_shift_name(employee_name: Optional[str], shift_type: str, shift_date: str) -> str:
-    """Generate a stable display name for shift rows that require a non-null name."""
-    person = (employee_name or "Employee").strip() or "Employee"
-    shift_label = (shift_type or "shift").replace("_", " ").strip().title() or "Shift"
-    date_label = (shift_date or "").strip()
-    return f"{person} - {shift_label} - {date_label}".strip(" -")
+@router.get("/shift-templates")
+async def list_shift_templates(current_user: dict = Depends(require_role("lead", "manager", "hr", "director", "super_admin"))):
+    response = supabase.table("shift_templates").select("*").order("created_at").execute()
+    return {"templates": [
+        {"id": str(row["id"]), "name": row["name"], "start_time": row["start_time"], "end_time": row["end_time"],
+         "notes": row.get("notes"), "created_by": row.get("created_by"), "created_at": row.get("created_at")}
+        for row in (response.data or [])
+    ]}
+
+
+@router.post("/shift-templates", status_code=201)
+async def create_shift_template(template: ShiftTemplateCreate, current_user: dict = Depends(require_role("hr", "director", "super_admin"))):
+    name = template.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Shift name is required")
+    existing = supabase.table("shift_templates").select("id,name").execute()
+    if any(str(row.get("name", "")).casefold() == name.casefold() for row in (existing.data or [])):
+        raise HTTPException(status_code=409, detail="A shift with this name already exists")
+    creator = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
+    if not creator:
+        raise HTTPException(status_code=404, detail="Current user not found")
+    now = datetime.utcnow().isoformat()
+    try:
+        response = supabase.table("shift_templates").insert({
+            "name": name,
+            "start_time": template.start_time, "end_time": template.end_time, "notes": template.notes,
+            "created_by": str(creator["id"]),
+            "created_at": now, "updated_at": now,
+        }).execute()
+    except Exception as error:
+        if "duplicate key" in str(error).lower() or "unique constraint" in str(error).lower():
+            raise HTTPException(status_code=409, detail="A shift with this name already exists")
+        raise
+    if not response.data:
+        raise HTTPException(status_code=500, detail="Failed to create shift")
+    row = response.data[0]
+    _audit(current_user, "shift_template_created", f"Created shift template {name}.", str(row["id"]), {"name": name})
+    return {"id": str(row["id"]), "name": name, "start_time": row["start_time"], "end_time": row["end_time"], "notes": row.get("notes")}
+
+
+@router.patch("/shift-templates/{template_id}")
+async def update_shift_template(template_id: str, update: ShiftTemplateUpdate, current_user: dict = Depends(require_role("hr", "director", "super_admin"))):
+    row = await _get_template(template_id)
+    changes = update.model_dump(exclude_unset=True)
+    if changes.get("start_time", row["start_time"]) == changes.get("end_time", row["end_time"]):
+        raise HTTPException(status_code=422, detail="Start and end times must be different")
+    if "name" in changes:
+        changes["name"] = changes["name"].strip()
+        if not changes["name"]:
+            raise HTTPException(status_code=422, detail="Shift name is required")
+        existing = supabase.table("shift_templates").select("id,name").execute()
+        if any(r.get("id") != template_id and str(r.get("name", "")).casefold() == changes["name"].casefold() for r in (existing.data or [])):
+            raise HTTPException(status_code=409, detail="A shift with this name already exists")
+    if not changes:
+        return {"id": template_id, "name": row["name"], "start_time": row["start_time"], "end_time": row["end_time"], "notes": row.get("notes")}
+    changes["updated_at"] = datetime.utcnow().isoformat()
+    try:
+        updated = supabase.table("shift_templates").update(changes).eq("id", template_id).execute()
+    except Exception as error:
+        if "duplicate key" in str(error).lower() or "unique constraint" in str(error).lower():
+            raise HTTPException(status_code=409, detail="A shift with this name already exists")
+        raise
+    if not updated.data:
+        raise HTTPException(status_code=500, detail="Failed to update shift")
+    row = updated.data[0]
+    _audit(current_user, "shift_template_updated", f"Updated shift template {row['name']}.", template_id, {"fields": list(changes)})
+    return {"id": template_id, "name": row["name"], "start_time": row["start_time"], "end_time": row["end_time"], "notes": row.get("notes")}
+
+
+@router.delete("/shift-templates/{template_id}")
+async def delete_shift_template(template_id: str, current_user: dict = Depends(require_role("hr", "director", "super_admin"))):
+    row = await _get_template(template_id)
+    supabase.table("shift_templates").delete().eq("id", template_id).execute()
+    _audit(current_user, "shift_template_deleted", f"Deleted shift template {row['name']}.", template_id, {"name": row["name"]})
+    return {"id": template_id, "message": "Shift template deleted"}
 
 
 @router.post("/shifts")
-async def create_shift(
-    shift: ShiftCreate,
-    current_user: dict = Depends(require_role("lead", "manager", "director", "hr")),
-):
+async def create_shift_allocation(allocation: ShiftAllocationCreate, current_user: dict = Depends(require_role("lead", "manager", "hr", "director", "super_admin"))):
+    employee = await _get_employee(allocation.employee_id)
+    await _check_allocation_scope(current_user, employee)
+    template = await _get_template(allocation.shift_template_id)
+    existing = supabase.table("shifts").select("id,shift_date,status").eq("employee_id", employee["id"]).in_("status", ["pending", "approved"]).execute()
+    today = datetime.utcnow().date().isoformat()
+    if any(not row.get("shift_date") or row.get("shift_date") >= today for row in (existing.data or [])):
+        raise HTTPException(status_code=409, detail="This employee already has a pending or active shift allocation")
+    creator = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
+    if not creator:
+        raise HTTPException(status_code=404, detail="Current user not found")
+    role = current_user.get("role")
+    status = "approved" if role in {"director", "super_admin"} else "pending"
+    approver = str(creator["id"]) if status == "approved" else None
+    now = datetime.utcnow().isoformat()
+    row = {
+        "name": template["name"], "employee_id": employee["id"], "employee_name": employee.get("name"),
+        "employee_email": employee.get("email"), "shift_type": template["name"], "shift_date": None,
+        "shift_template_id": template["id"],
+        "start_time": template["start_time"], "end_time": template["end_time"], "notes": allocation.notes,
+        "status": status, "created_by": str(creator["id"]), "created_by_name": current_user.get("name"),
+        "approved_by": approver, "approved_by_name": current_user.get("name") if approver else None,
+        "rejection_reason": None, "created_at": now, "updated_at": now,
+    }
     try:
-        employee_row = await SupabaseHelper.get_user_row_by_firebase_uid(shift.employee_id)
-        if not employee_row:
-            raise HTTPException(status_code=404, detail="Employee not found")
-
-        employee_data = await SupabaseHelper.get_public_user_by_id(employee_row["id"])
-        employee_data["uid"] = shift.employee_id
-
-        user_map = await SupabaseHelper.get_public_user_map()
-        if current_user.get("role") in {"lead", "manager", "director", "hr"}:
-            allowed = ALLOWED_TARGET_ROLES.get(current_user.get("role"), set())
-            if employee_data.get("role") not in allowed:
-                raise HTTPException(status_code=403, detail="Insufficient permissions")
-            if current_user.get("role") in {"lead", "manager"} and shift.employee_id not in _get_descendants(current_user.get("uid"), user_map):
-                raise HTTPException(status_code=403, detail="You can only create shifts for employees in your reporting hierarchy")
-
-        creator_row = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
-        if not creator_row:
-            raise HTTPException(status_code=404, detail="Current user not found")
-
-        existing = supabase.table("shifts").select("id").eq("employee_id", str(employee_row["id"])).eq("shift_date", shift.shift_date).execute()
-        if any(row for row in (existing.data or []) if row):
-            raise HTTPException(status_code=400, detail="A shift already exists for this employee on this date")
-
-        shift_row = {
-            "name": _build_shift_name(employee_data.get("name"), shift.shift_type, shift.shift_date),
-            "employee_id": str(employee_row["id"]),
-            "employee_name": employee_data.get("name"),
-            "employee_email": employee_data.get("email"),
-            "shift_type": shift.shift_type,
-            "shift_date": shift.shift_date,
-            "start_time": shift.start_time,
-            "end_time": shift.end_time,
-            "notes": shift.notes,
-            "status": "pending",
-            "created_by": str(creator_row["id"]),
-            "created_by_name": current_user.get("name"),
-            "approved_by": None,
-            "approved_by_name": None,
-            "rejection_reason": None,
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
-        }
-
-        response = supabase.table("shifts").insert(shift_row).execute()
-        inserted = response.data[0] if response.data else None
-        if not inserted:
-            raise HTTPException(status_code=500, detail="Failed to create shift")
-
-        shift_public = await _shift_to_public(inserted)
-
-        log_audit_event(
-            actor_id=current_user.get("uid"),
-            actor_name=current_user.get("name"),
-            actor_email=current_user.get("email"),
-            module="shift_management",
-            action="shift_created",
-            description=(
-                f"{current_user.get('name', 'Someone')} created a {shift_public['shift_type']} shift for "
-                f"{shift_public.get('employee_name', shift_public['employee_id'])} on {shift_public['shift_date']} "
-                f"({shift_public['start_time']} - {shift_public['end_time']})."
-            ),
-            result="success",
-            target_type="shift",
-            target_id=shift_public["id"],
-            metadata={
-                "employee_id": shift_public["employee_id"],
-                "employee_name": shift_public.get("employee_name"),
-                "shift_type": shift_public["shift_type"],
-                "shift_date": shift_public["shift_date"],
-                "start_time": shift_public["start_time"],
-                "end_time": shift_public["end_time"],
-                "status": shift_public["status"],
-            },
-        )
-        return shift_public
-    except HTTPException:
+        inserted = supabase.table("shifts").insert(row).execute()
+    except Exception as error:
+        if "duplicate key" in str(error).lower() or "unique constraint" in str(error).lower():
+            raise HTTPException(status_code=409, detail="This employee already has a pending or active shift allocation")
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create shift: {str(e)}")
+    if not inserted.data:
+        raise HTTPException(status_code=500, detail="Failed to allocate shift")
+    result = await _shift_to_public(inserted.data[0])
+    _audit(current_user, "shift_allocated", f"Allocated {template['name']} to {employee.get('name')} ({status}).", result["id"], {"employee_id": employee["uid"], "template": template["name"], "status": status})
+    return result
 
 
 @router.get("/shifts")
-async def get_shifts(
-    status: Optional[str] = None,
-    employee_id: Optional[str] = None,
-    shift_date: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
-):
-    try:
-        query = supabase.table("shifts").select("*").order("created_at", desc=True)
-
-        if status:
-            query = query.eq("status", status)
-        if employee_id:
-            employee_row = await SupabaseHelper.get_user_row_by_firebase_uid(employee_id)
-            if employee_row:
-                query = query.eq("employee_id", str(employee_row["id"]))
-            else:
-                return {"shifts": []}
-        if shift_date:
-            query = query.eq("shift_date", shift_date)
-
-        resp = query.execute()
-        rows = resp.data or []
-
-        user_role = current_user.get("role")
-        user_uid = current_user.get("uid")
-        user_map = await SupabaseHelper.get_public_user_map()
-        public_rows = []
-        for row in rows:
-            public_row = await _shift_to_public(row)
-            if start_date and public_row.get("shift_date", "") < start_date:
-                continue
-            if end_date and public_row.get("shift_date", "") > end_date:
-                continue
-
-            if user_role in ["director", "super_admin", "hr"]:
-                public_rows.append(public_row)
-                continue
-            if user_role == "employee":
-                if public_row.get("employee_id") == user_uid:
-                    public_rows.append(public_row)
-                continue
-            if user_role in {"manager", "lead"}:
-                if public_row.get("employee_id") == user_uid or public_row.get("created_by") == user_uid:
-                    public_rows.append(public_row)
-                    continue
-                if public_row.get("employee_id") in _get_descendants(user_uid, user_map):
-                    public_rows.append(public_row)
-
-        return {"shifts": public_rows}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch shifts: {str(e)}")
+async def get_shifts(status: Optional[str] = None, employee_id: Optional[str] = None, shift_date: Optional[str] = None,
+                     start_date: Optional[str] = None, end_date: Optional[str] = None,
+                     current_user: dict = Depends(get_current_user)):
+    query = supabase.table("shifts").select("*").not_.is_("employee_id", "null").order("created_at", desc=True)
+    if status:
+        query = query.eq("status", status)
+    if employee_id:
+        employee = await SupabaseHelper.get_user_row_by_firebase_uid(employee_id)
+        if not employee:
+            return {"shifts": []}
+        query = query.eq("employee_id", str(employee["id"]))
+    if shift_date:
+        query = query.or_(f"shift_date.eq.{shift_date},shift_date.is.null")
+    rows = query.execute().data or []
+    role = current_user.get("role")
+    user_uid = str(current_user.get("uid"))
+    user_map = await SupabaseHelper.get_public_user_map()
+    descendants = _get_descendants(user_uid, user_map) if role in {"manager", "lead"} else set()
+    results = []
+    for row in rows:
+        public = await _shift_to_public(row, user_map)
+        date = public.get("shift_date")
+        if start_date and date and date < start_date:
+            continue
+        if end_date and date and date > end_date:
+            continue
+        target = public.get("employee_id")
+        creator = public.get("created_by")
+        if role in {"hr", "director", "super_admin"} or target == user_uid or creator == user_uid or target in descendants:
+            results.append(public)
+    return {"shifts": results}
 
 
 @router.get("/shifts/pending-approvals")
 async def get_pending_approvals(current_user: dict = Depends(require_role("manager", "director", "super_admin"))):
-    try:
-        resp = supabase.table("shifts").select("*").eq("status", "pending").order("created_at", desc=True).execute()
-        rows = resp.data or []
-        role_cache: Dict[str, Optional[str]] = {}
-        role_cache["_user_map"] = await SupabaseHelper.get_public_user_map()
-        approvals = []
-        for row in rows:
-            if await _can_current_user_approve_shift(current_user, row, role_cache):
-                approvals.append(await _shift_to_public(row))
-        return {"shifts": approvals}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch pending approvals: {str(e)}")
+    pending = supabase.table("shifts").select("*").not_.is_("employee_id", "null").eq("status", "pending").order("created_at", desc=True).execute().data or []
+    user_map = await SupabaseHelper.get_public_user_map()
+    result = []
+    for row in pending:
+        if await _can_approve(current_user, row, user_map):
+            result.append(await _shift_to_public(row, user_map))
+    return {"shifts": result}
 
 
 @router.patch("/shifts/{shift_id}/approve")
 async def approve_shift(shift_id: str, current_user: dict = Depends(require_role("manager", "director", "super_admin"))):
-    try:
-        resp = supabase.table("shifts").select("*").eq("id", shift_id).execute()
-        if not resp.data:
-            raise HTTPException(status_code=404, detail="Shift not found")
-        shift_data = resp.data[0]
-        if shift_data.get("status") != "pending":
-            raise HTTPException(status_code=400, detail=f"Cannot approve shift with status: {shift_data.get('status')}")
-
-        role_cache: Dict[str, Optional[str]] = {"_user_map": await SupabaseHelper.get_public_user_map()}
-        if not await _can_current_user_approve_shift(current_user, shift_data, role_cache):
-            raise HTTPException(status_code=403, detail="You are not allowed to approve this shift")
-
-        approver_row = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
-        update_resp = supabase.table("shifts").update({
-            "status": "approved",
-            "approved_by": str(approver_row["id"]) if approver_row else None,
-            "approved_by_name": current_user.get("name"),
-            "rejection_reason": None,
-            "updated_at": datetime.utcnow().isoformat(),
-        }).eq("id", shift_id).execute()
-        updated = update_resp.data[0] if update_resp.data else None
-        if not updated:
-            raise HTTPException(status_code=500, detail="Failed to approve shift")
-
-        shift_public = await _shift_to_public(updated)
-        log_audit_event(
-            actor_id=current_user.get("uid"),
-            actor_name=current_user.get("name"),
-            actor_email=current_user.get("email"),
-            module="shift_management",
-            action="shift_approved",
-            description=(
-                f"{current_user.get('name', 'Someone')} approved the shift for "
-                f"{shift_public.get('employee_name', shift_public.get('employee_id'))} on {shift_public.get('shift_date')}."
-            ),
-            result="success",
-            target_type="shift",
-            target_id=shift_id,
-            metadata={
-                "employee_id": shift_public.get("employee_id"),
-                "employee_name": shift_public.get("employee_name"),
-                "shift_type": shift_public.get("shift_type"),
-                "shift_date": shift_public.get("shift_date"),
-                "status": "approved",
-            },
-        )
-        return shift_public
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to approve shift: {str(e)}")
+    allocation = await _get_allocation(shift_id)
+    if allocation.get("status") != "pending":
+        raise HTTPException(status_code=409, detail="Only pending allocations can be approved")
+    user_map = await SupabaseHelper.get_public_user_map()
+    if not await _can_approve(current_user, allocation, user_map):
+        raise HTTPException(status_code=403, detail="You cannot approve this allocation")
+    approver = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
+    result = supabase.table("shifts").update({"status": "approved", "approved_by": str(approver["id"]) if approver else None,
+        "approved_by_name": current_user.get("name"), "rejection_reason": None, "updated_at": datetime.utcnow().isoformat()}).eq("id", shift_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to approve allocation")
+    public = await _shift_to_public(result.data[0], user_map)
+    _audit(current_user, "shift_approved", f"Approved shift allocation for {public.get('employee_name')}.", shift_id, {"employee_id": public.get("employee_id")})
+    return public
 
 
 @router.patch("/shifts/{shift_id}/reject")
 async def reject_shift(shift_id: str, rejection_reason: str = Body(..., embed=True), current_user: dict = Depends(require_role("manager", "director", "super_admin"))):
-    try:
-        resp = supabase.table("shifts").select("*").eq("id", shift_id).execute()
-        if not resp.data:
-            raise HTTPException(status_code=404, detail="Shift not found")
-        shift_data = resp.data[0]
-        if shift_data.get("status") != "pending":
-            raise HTTPException(status_code=400, detail=f"Cannot reject shift with status: {shift_data.get('status')}")
-
-        role_cache: Dict[str, Optional[str]] = {"_user_map": await SupabaseHelper.get_public_user_map()}
-        if not await _can_current_user_approve_shift(current_user, shift_data, role_cache):
-            raise HTTPException(status_code=403, detail="You are not allowed to reject this shift")
-
-        approver_row = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
-        update_resp = supabase.table("shifts").update({
-            "status": "rejected",
-            "approved_by": str(approver_row["id"]) if approver_row else None,
-            "approved_by_name": current_user.get("name"),
-            "rejection_reason": rejection_reason,
-            "updated_at": datetime.utcnow().isoformat(),
-        }).eq("id", shift_id).execute()
-        updated = update_resp.data[0] if update_resp.data else None
-        if not updated:
-            raise HTTPException(status_code=500, detail="Failed to reject shift")
-
-        shift_public = await _shift_to_public(updated)
-        log_audit_event(
-            actor_id=current_user.get("uid"),
-            actor_name=current_user.get("name"),
-            actor_email=current_user.get("email"),
-            module="shift_management",
-            action="shift_rejected",
-            description=(
-                f"{current_user.get('name', 'Someone')} rejected the shift for "
-                f"{shift_public.get('employee_name', shift_public.get('employee_id'))} on {shift_public.get('shift_date')}. Reason: {rejection_reason}."
-            ),
-            result="success",
-            target_type="shift",
-            target_id=shift_id,
-            metadata={
-                "employee_id": shift_public.get("employee_id"),
-                "employee_name": shift_public.get("employee_name"),
-                "shift_type": shift_public.get("shift_type"),
-                "shift_date": shift_public.get("shift_date"),
-                "status": "rejected",
-                "rejection_reason": rejection_reason,
-            },
-        )
-        return shift_public
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to reject shift: {str(e)}")
-
-
-@router.patch("/shifts/bulk-approve")
-async def bulk_approve_shifts(payload: Dict[str, Any], current_user: dict = Depends(require_role("manager", "director", "super_admin"))):
-    try:
-        shift_ids = payload.get("shift_ids") or []
-        if not isinstance(shift_ids, list) or not shift_ids:
-            raise HTTPException(status_code=400, detail="shift_ids is required")
-
-        approved: List[str] = []
-        failed: List[Dict[str, str]] = []
-        for shift_id in shift_ids:
-            try:
-                await approve_shift(shift_id, current_user=current_user)
-                approved.append(shift_id)
-            except Exception as inner:
-                failed.append({"id": shift_id, "reason": str(inner)})
-        return {"approved": approved, "failed": failed, "successCount": len(approved), "failCount": len(failed)}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to bulk approve shifts: {str(e)}")
-
-
-@router.patch("/shifts/bulk-reject")
-async def bulk_reject_shifts(payload: Dict[str, Any], current_user: dict = Depends(require_role("manager", "director", "super_admin"))):
-    try:
-        shift_ids = payload.get("shift_ids") or []
-        rejection_reason = payload.get("rejection_reason")
-        if not isinstance(shift_ids, list) or not shift_ids:
-            raise HTTPException(status_code=400, detail="shift_ids is required")
-        if not rejection_reason or not str(rejection_reason).strip():
-            raise HTTPException(status_code=400, detail="rejection_reason is required")
-
-        rejected: List[str] = []
-        failed: List[Dict[str, str]] = []
-        for shift_id in shift_ids:
-            try:
-                await reject_shift(shift_id, rejection_reason=rejection_reason, current_user=current_user)
-                rejected.append(shift_id)
-            except Exception as inner:
-                failed.append({"id": shift_id, "reason": str(inner)})
-        return {"rejected": rejected, "failed": failed, "successCount": len(rejected), "failCount": len(failed)}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to bulk reject shifts: {str(e)}")
-
-
-@router.delete("/shifts/{shift_id}")
-async def delete_shift(shift_id: str, current_user: dict = Depends(require_role("lead", "manager", "director"))):
-    try:
-        resp = supabase.table("shifts").select("*").eq("id", shift_id).execute()
-        if not resp.data:
-            raise HTTPException(status_code=404, detail="Shift not found")
-        shift_data = resp.data[0]
-
-        if current_user["role"] == "lead":
-            creator_row = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
-            if not creator_row or str(shift_data.get("created_by")) != str(creator_row["id"]):
-                raise HTTPException(status_code=403, detail="You can only delete shifts you created")
-
-        if shift_data.get("status") != "pending":
-            raise HTTPException(status_code=400, detail=f"Cannot delete shift with status: {shift_data.get('status')}")
-
-        shift_public = await _shift_to_public(shift_data)
-        supabase.table("shifts").delete().eq("id", shift_id).execute()
-
-        log_audit_event(
-            actor_id=current_user.get("uid"),
-            actor_name=current_user.get("name"),
-            actor_email=current_user.get("email"),
-            module="shift_management",
-            action="shift_deleted",
-            description=(
-                f"{current_user.get('name', 'Someone')} deleted the shift for "
-                f"{shift_public.get('employee_name', shift_public.get('employee_id'))} on {shift_public.get('shift_date')}."
-            ),
-            result="success",
-            target_type="shift",
-            target_id=shift_id,
-            metadata={
-                "employee_id": shift_public.get("employee_id"),
-                "employee_name": shift_public.get("employee_name"),
-                "shift_type": shift_public.get("shift_type"),
-                "shift_date": shift_public.get("shift_date"),
-                "status": shift_public.get("status"),
-            },
-        )
-        return {"message": "Shift deleted successfully", "id": shift_id}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete shift: {str(e)}")
+    reason = rejection_reason.strip()
+    if not reason:
+        raise HTTPException(status_code=422, detail="A rejection reason is required")
+    allocation = await _get_allocation(shift_id)
+    if allocation.get("status") != "pending":
+        raise HTTPException(status_code=409, detail="Only pending allocations can be rejected")
+    user_map = await SupabaseHelper.get_public_user_map()
+    if not await _can_approve(current_user, allocation, user_map):
+        raise HTTPException(status_code=403, detail="You cannot reject this allocation")
+    approver = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
+    result = supabase.table("shifts").update({"status": "rejected", "approved_by": str(approver["id"]) if approver else None,
+        "approved_by_name": current_user.get("name"), "rejection_reason": reason, "updated_at": datetime.utcnow().isoformat()}).eq("id", shift_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to reject allocation")
+    public = await _shift_to_public(result.data[0], user_map)
+    _audit(current_user, "shift_rejected", f"Rejected shift allocation for {public.get('employee_name')}.", shift_id, {"reason": reason})
+    return public
 
 
 @router.patch("/shifts/{shift_id}")
-async def update_shift(
-    shift_id: str,
-    shift_update: ShiftUpdate,
-    current_user: dict = Depends(require_role("lead", "manager", "director", "hr")),
-):
+async def update_shift_allocation(shift_id: str, update: ShiftAllocationUpdate, current_user: dict = Depends(require_role("lead", "manager", "hr", "director", "super_admin"))):
+    existing = await _get_allocation(shift_id)
+    role = current_user.get("role")
+    is_admin = role in {"hr", "director", "super_admin"}
+    creator = await SupabaseHelper.get_public_user_by_id(existing.get("created_by")) if existing.get("created_by") else None
+    if not is_admin and (not creator or creator.get("uid") != current_user.get("uid") or existing.get("status") != "pending"):
+        raise HTTPException(status_code=403, detail="You can only edit your own pending allocations")
+    employee_uid = update.employee_id or (await SupabaseHelper.get_public_user_by_id(existing["employee_id"])).get("uid")
+    employee = await _get_employee(employee_uid)
+    await _check_allocation_scope(current_user, employee)
+    if str(employee["id"]) != str(existing["employee_id"]):
+        duplicates = supabase.table("shifts").select("id,shift_date").eq("employee_id", employee["id"]).in_("status", ["pending", "approved"]).execute()
+        today = datetime.utcnow().date().isoformat()
+        if any(not row.get("shift_date") or row.get("shift_date") >= today for row in (duplicates.data or [])):
+            raise HTTPException(status_code=409, detail="This employee already has a pending or active shift allocation")
+    template_id = update.shift_template_id
+    template = await _get_template(template_id) if template_id else None
+    changes: Dict[str, Any] = {"employee_id": employee["id"], "employee_name": employee.get("name"),
+        "employee_email": employee.get("email"), "updated_at": datetime.utcnow().isoformat()}
+    if template:
+        changes.update({"name": template["name"], "shift_type": template["name"], "shift_template_id": template["id"], "start_time": template["start_time"], "end_time": template["end_time"]})
+    if update.notes is not None:
+        changes["notes"] = update.notes
+    changes.update({"status": "approved" if role in {"director", "super_admin"} else "pending",
+        "approved_by": None, "approved_by_name": None, "rejection_reason": None})
+    if role in {"director", "super_admin"}:
+        approver = await SupabaseHelper.get_user_row_by_firebase_uid(current_user.get("uid"))
+        changes.update({"approved_by": str(approver["id"]) if approver else None, "approved_by_name": current_user.get("name")})
     try:
-        resp = supabase.table("shifts").select("*").eq("id", shift_id).execute()
-        if not resp.data:
-            raise HTTPException(status_code=404, detail="Shift not found")
-
-        shift_data = resp.data[0]
-        employee_row = await SupabaseHelper.get_public_user_by_id(shift_data.get("employee_id")) if shift_data.get("employee_id") else None
-        if not employee_row:
-            raise HTTPException(status_code=404, detail="Employee not found for this shift")
-
-        user_map = await SupabaseHelper.get_public_user_map()
-        if current_user.get("role") in {"lead", "manager"} and employee_row.get("uid") not in _get_descendants(current_user.get("uid"), user_map) and employee_row.get("uid") != current_user.get("uid"):
-            raise HTTPException(status_code=403, detail="You can only update shifts for employees in your reporting hierarchy")
-
-        if shift_data.get("status") not in ["pending", "approved"]:
-            raise HTTPException(status_code=400, detail=f"Cannot update shift with status: {shift_data.get('status')}")
-
-        update_data: Dict[str, Any] = {"updated_at": datetime.utcnow().isoformat()}
-        if shift_data.get("status") == "approved":
-            update_data.update({"status": "pending", "approved_by": None, "approved_by_name": None, "rejection_reason": None})
-        if shift_update.shift_type is not None:
-            update_data["shift_type"] = shift_update.shift_type
-        if shift_update.shift_date is not None:
-            update_data["shift_date"] = shift_update.shift_date
-        if shift_update.start_time is not None:
-            update_data["start_time"] = shift_update.start_time
-        if shift_update.end_time is not None:
-            update_data["end_time"] = shift_update.end_time
-        if shift_update.notes is not None:
-            update_data["notes"] = shift_update.notes
-
-        update_resp = supabase.table("shifts").update(update_data).eq("id", shift_id).execute()
-        updated = update_resp.data[0] if update_resp.data else None
-        if not updated:
-            raise HTTPException(status_code=500, detail="Failed to update shift")
-
-        shift_public = await _shift_to_public(updated)
-        log_audit_event(
-            actor_id=current_user.get("uid"),
-            actor_name=current_user.get("name"),
-            actor_email=current_user.get("email"),
-            module="shift_management",
-            action="shift_updated",
-            description=(
-                f"{current_user.get('name', 'Someone')} updated the shift for "
-                f"{shift_public.get('employee_name', shift_public.get('employee_id'))} on {shift_public.get('shift_date')}."
-            ),
-            result="success",
-            target_type="shift",
-            target_id=shift_id,
-            metadata={
-                "updated_fields": list(update_data.keys()),
-                "employee_id": shift_public.get("employee_id"),
-                "employee_name": shift_public.get("employee_name"),
-                "shift_type": shift_public.get("shift_type"),
-                "shift_date": shift_public.get("shift_date"),
-                "start_time": shift_public.get("start_time"),
-                "end_time": shift_public.get("end_time"),
-                "status": shift_public.get("status"),
-            },
-        )
-        return shift_public
-    except HTTPException:
+        result = supabase.table("shifts").update(changes).eq("id", shift_id).execute()
+    except Exception as error:
+        if "duplicate key" in str(error).lower() or "unique constraint" in str(error).lower():
+            raise HTTPException(status_code=409, detail="This employee already has a pending or active shift allocation")
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update shift: {str(e)}")
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to update allocation")
+    public = await _shift_to_public(result.data[0])
+    _audit(current_user, "shift_allocation_updated", f"Updated shift allocation for {public.get('employee_name')}.", shift_id, {"fields": list(changes)})
+    return public
+
+
+@router.delete("/shifts/{shift_id}")
+async def delete_shift_allocation(shift_id: str, current_user: dict = Depends(require_role("lead", "manager", "hr", "director", "super_admin"))):
+    allocation = await _get_allocation(shift_id)
+    role = current_user.get("role")
+    if role not in {"hr", "director", "super_admin"}:
+        creator = await SupabaseHelper.get_public_user_by_id(allocation.get("created_by")) if allocation.get("created_by") else None
+        if not creator or creator.get("uid") != current_user.get("uid") or allocation.get("status") != "pending":
+            raise HTTPException(status_code=403, detail="You can only delete your own pending allocations")
+    public = await _shift_to_public(allocation)
+    supabase.table("shifts").delete().eq("id", shift_id).execute()
+    _audit(current_user, "shift_allocation_deleted", f"Deleted shift allocation for {public.get('employee_name')}.", shift_id, {"employee_id": public.get("employee_id")})
+    return {"id": shift_id, "message": "Shift allocation deleted"}
