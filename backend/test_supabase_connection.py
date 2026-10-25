@@ -22,7 +22,6 @@ def test_supabase_connection():
     print("\n1️⃣  Checking environment variables...")
     required_vars = [
         'SUPABASE_URL',
-        'SUPABASE_ANON_KEY',
         'SUPABASE_SERVICE_ROLE_KEY',
         'SUPABASE_DB_PASSWORD'
     ]

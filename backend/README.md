@@ -15,17 +15,17 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-3. Configure Firebase:
-   - Download Firebase Admin SDK service account key
-   - Save as `firebase-credentials.json` in the backend folder
-   - Add to `.env` file
+3. Configure Firebase using the `hestia-c1483` project:
+   - Download its Firebase Admin SDK service account key
+   - Set the complete JSON as `FIREBASE_CREDENTIALS` in `.env`, or save it as `credentials/firebase-credentials.json`
+   - Google Drive uses this same service account; enable the Drive API and share the target folder with its service account email
 
 4. Create `.env` file:
 ```env
-FIREBASE_CREDENTIALS_PATH=./firebase-credentials.json
+FIREBASE_CREDENTIALS_PATH=credentials/firebase-credentials.json
+FIREBASE_CREDENTIALS=
 API_HOST=0.0.0.0
 API_PORT=8000
-FRONTEND_URL=http://localhost:3000
 ```
 
 5. Run the development server:

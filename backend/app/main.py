@@ -16,6 +16,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://frontend-mocha-delta-88.vercel.app",
         "https://joyhr-web.vercel.app",
         "https://joyhr-api.vercel.app",
     ],

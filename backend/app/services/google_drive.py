@@ -19,11 +19,11 @@ class GoogleDriveService:
         """Initialize Google Drive service with service account credentials"""
         # Load service account credentials from settings
         settings = get_settings()
-        credentials_path = settings.google_service_account_path
+        credentials_path = settings.firebase_credentials_path
         
         try:
-            if settings.google_service_account_json:
-                credential_info = json.loads(settings.google_service_account_json)
+            if settings.firebase_credentials:
+                credential_info = json.loads(settings.firebase_credentials)
                 self.credentials = service_account.Credentials.from_service_account_info(
                     credential_info,
                     scopes=self.SCOPES

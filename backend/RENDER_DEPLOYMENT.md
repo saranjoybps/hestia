@@ -54,17 +54,13 @@ In Render Dashboard → Your Service → Environment:
    - Copy the entire JSON content
    - Paste it as the value (as a single line JSON string)
 
-2. **FIREBASE_PROJECT_ID** (Optional but recommended)
-   - Your Firebase project ID
-   - Example: `joyhr-98108`
+2. Use the `hestia-c1483` Firebase project for all Firebase authentication and Firestore operations.
 
 3. **PYTHON_VERSION** (Optional)
    - Value: `3.11.0`
    - Forces Render to use Python 3.11
 
-4. **FRONTEND_URL** (For CORS)
-   - Your frontend URL (update when frontend is deployed)
-   - Example: `https://joyhr-frontend.onrender.com`
+4. Google Drive uses the same `FIREBASE_CREDENTIALS` service account. Enable the Drive API in `hestia-c1483` and share the Drive folder with that service account email.
 
 ### 5. Deploy
 

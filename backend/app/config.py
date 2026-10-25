@@ -31,9 +31,7 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     
-    # Google Drive (for document storage)
-    google_service_account_path: str = "credentials/service-account.json"
-    google_service_account_json: str | None = None  # Inline service account JSON for deployment
+    # Google Drive uses the same Firebase service account credentials.
     google_drive_folder_id: str = ""  # Optional: specific folder for letters
 
     # Zoho SMTP (optional)
@@ -48,7 +46,6 @@ class Settings(BaseSettings):
     
     # Supabase (PostgreSQL backend)
     supabase_url: str
-    supabase_anon_key: str
     supabase_service_role_key: str
     supabase_db_password: str
 
